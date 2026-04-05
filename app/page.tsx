@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getUserByEmail } from "@/lib/firestore";
+import { getUserByEmail, logLogin } from "@/lib/firestore";
 import { Shield, LogIn, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
@@ -40,6 +40,7 @@ export default function LoginPage() {
         return;
       }
       login(found);
+      logLogin(found);
       router.push("/dashboard");
     } catch {
       setError("Something went wrong. Please try again.");

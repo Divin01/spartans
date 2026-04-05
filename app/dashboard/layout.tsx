@@ -13,6 +13,7 @@ import {
   Shield,
   Menu,
   X,
+  ScrollText,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
+  { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -65,7 +67,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
 
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(({ href, label, icon: Icon }) => {
+          {navItems
+            .filter((item) => !('managerOnly' in item && item.managerOnly) || user.role === "manager")
+            .map(({ href, label, icon: Icon }) => {
             const active =
               href === "/dashboard"
                 ? pathname === "/dashboard"

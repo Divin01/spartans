@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask } from "./types";
+import type { User, Task, Subtask, LoginLog } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -92,4 +92,22 @@ export async function toggleSubtask(
       : s
   );
   await updateDoc(doc(db, "tasks", taskId), { subtasks: updated });
+}
+
+// ── Login Logs ──────────────────────────────────────────
+export async function logLogin(user: User): Promise<void> {
+  await addDoc(collection(db, "loginLogs"), {
+    userId: user.id,
+    userName: user.name,
+    userEmail: user.email,
+    userRole: user.role,
+    loginAt: new Date().toISOString(),
+  });
+}
+
+export async function getLoginLogs(): Promise<LoginLog[]> {
+  const snap = await getDocs(
+    query(collection(db, "loginLogs"), orderBy("loginAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as LoginLog));
 }

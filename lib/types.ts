@@ -25,3 +25,12 @@ export interface Task {
   createdBy: string;
   dueDate?: string;
 }
+
+export interface LoginLog {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: "manager" | "member";
+  loginAt: string;
+}
