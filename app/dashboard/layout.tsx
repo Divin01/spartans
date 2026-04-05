@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { getInitials } from "@/lib/colors";
 import {
   LayoutDashboard,
   ListTodo,
@@ -90,7 +91,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         <div className="p-4 border-t border-gray-200">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold">
-              {user.name.charAt(0).toUpperCase()}
+              {getInitials(user.name)}
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{user.name}</p>

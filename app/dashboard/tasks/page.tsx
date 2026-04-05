@@ -11,6 +11,7 @@ import {
   toggleSubtask,
 } from "@/lib/firestore";
 import type { Task, User, Subtask } from "@/lib/types";
+import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Plus,
   Trash2,
@@ -31,6 +32,7 @@ export default function TasksPage() {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [filter, setFilter] = useState<"all" | "mine">("all");
 
   async function load() {
@@ -63,6 +65,8 @@ export default function TasksPage() {
   }
 
   const isManager = user?.role === "manager";
+
+  const initialsMap = buildInitialsMap(users);
 
   // Group tasks by milestone
   const milestones = tasks.reduce<Record<string, Task[]>>((acc, t) => {
@@ -212,11 +216,12 @@ export default function TasksPage() {
                       : task.subtasks;
 
                   // Unique assignees
-                  const assignees = [
-                    ...new Map(
-                      task.subtasks.map((s) => [s.assigneeId, s.assigneeName])
-                    ).values(),
-                  ];
+                  const assigneeMap = new Map(
+                    task.subtasks.map((s) => [s.assigneeId, s.assigneeName])
+                  );
+                  const assignees = [...assigneeMap.entries()].map(
+                    ([id, name]) => ({ id, name })
+                  );
 
                   return (
                     <div
@@ -249,24 +254,39 @@ export default function TasksPage() {
                           )}
                         </div>
                         {task.description && (
-                          <p className="text-sm text-gray-500 leading-relaxed line-clamp-2 mb-3">
-                            {task.description}
-                          </p>
+                          <div className="mb-3">
+                            <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">
+                              {task.description}
+                            </p>
+                            {task.description.length > 100 && (
+                              <button
+                                onClick={() => setViewingTask(task)}
+                                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 transition"
+                              >
+                                View more
+                              </button>
+                            )}
+                          </div>
                         )}
 
                         {/* Assignee names */}
                         <div className="flex flex-wrap gap-1.5 mb-3">
-                          {assignees.map((name, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full"
-                            >
-                              <span className="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 text-[9px] font-bold flex items-center justify-center">
-                                {name.charAt(0).toUpperCase()}
+                          {assignees.map((a) => {
+                            const c = getUserColor(a.id);
+                            return (
+                              <span
+                                key={a.id}
+                                className={`inline-flex items-center gap-1 text-xs ${c.bg} ${c.text} px-2 py-0.5 rounded-full`}
+                              >
+                                <span
+                                  className={`w-4 h-4 rounded-full ${c.ring} text-[9px] font-bold flex items-center justify-center`}
+                                >
+                                  {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
+                                </span>
+                                {a.name.split(" ")[0]}
                               </span>
-                              {name.split(" ")[0]}
-                            </span>
-                          ))}
+                            );
+                          })}
                         </div>
 
                         {/* Meta row */}
@@ -389,15 +409,18 @@ export default function TasksPage() {
                       {/* Assignee avatars footer */}
                       <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
                         <div className="flex -space-x-2">
-                          {assignees.slice(0, 4).map((name, i) => (
-                            <div
-                              key={i}
-                              className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center border-2 border-white"
-                              title={name}
-                            >
-                              {name.charAt(0).toUpperCase()}
-                            </div>
-                          ))}
+                          {assignees.slice(0, 4).map((a) => {
+                            const c = getUserColor(a.id);
+                            return (
+                              <div
+                                key={a.id}
+                                className={`w-7 h-7 rounded-full ${c.bg} ${c.text} text-xs font-bold flex items-center justify-center border-2 border-white`}
+                                title={a.name}
+                              >
+                                {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
+                              </div>
+                            );
+                          })}
                           {assignees.length > 4 && (
                             <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center border-2 border-white">
                               +{assignees.length - 4}
@@ -491,6 +514,159 @@ export default function TasksPage() {
           </div>
         </div>
       )}
+
+      {/* Task detail modal */}
+      {viewingTask && (() => {
+        const t = viewingTask;
+        const done = t.subtasks.filter((s) => s.completed).length;
+        const total = t.subtasks.length;
+        const assigneeMap = new Map(
+          t.subtasks.map((s) => [s.assigneeId, s.assigneeName])
+        );
+        const taskAssignees = [...assigneeMap.entries()].map(
+          ([id, name]) => ({ id, name })
+        );
+
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+            onClick={() => setViewingTask(null)}
+          >
+            <div
+              className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
+                <div className="min-w-0">
+                  <h2 className="text-lg font-semibold text-gray-900 truncate">
+                    {t.title}
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-0.5">{t.milestone}</p>
+                </div>
+                <button
+                  onClick={() => setViewingTask(null)}
+                  className="text-gray-400 hover:text-gray-600 transition shrink-0 ml-3"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden px-6 py-5 space-y-5">
+                {/* Description */}
+                {t.description && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-1.5">
+                      Description
+                    </h4>
+                    <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                      {t.description}
+                    </p>
+                  </div>
+                )}
+
+                {/* Meta */}
+                <div className="flex flex-wrap gap-4 text-sm">
+                  {t.dueDate && (
+                    <div className="flex items-center gap-1.5 text-gray-500">
+                      <Calendar className="h-4 w-4" />
+                      {new Date(t.dueDate).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5 text-gray-500">
+                    <UsersIcon className="h-4 w-4" />
+                    {taskAssignees.length} assignee{taskAssignees.length !== 1 && "s"}
+                  </div>
+                  <span
+                    className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                      done === total && total > 0
+                        ? "bg-green-50 text-green-600"
+                        : "bg-indigo-50 text-indigo-600"
+                    }`}
+                  >
+                    {done}/{total} done
+                  </span>
+                </div>
+
+                {/* Assignees */}
+                <div>
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">
+                    Assigned to
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {taskAssignees.map((a) => {
+                      const c = getUserColor(a.id);
+                      return (
+                        <span
+                          key={a.id}
+                          className={`inline-flex items-center gap-1.5 text-sm ${c.bg} ${c.text} px-3 py-1 rounded-full`}
+                        >
+                          <span
+                            className={`w-5 h-5 rounded-full ${c.ring} text-[10px] font-bold flex items-center justify-center`}
+                          >
+                            {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
+                          </span>
+                          {a.name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Subtasks */}
+                {total > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 mb-2">
+                      Subtasks
+                    </h4>
+                    <div className="space-y-1.5">
+                      {t.subtasks.map((sub) => (
+                        <div
+                          key={sub.id}
+                          className="flex items-center gap-2.5 py-1.5 px-3 rounded-lg bg-gray-50"
+                        >
+                          {sub.completed ? (
+                            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-gray-300 shrink-0" />
+                          )}
+                          <span
+                            className={`flex-1 text-sm ${
+                              sub.completed
+                                ? "line-through text-gray-400"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            {sub.title}
+                          </span>
+                          <span className="text-xs text-gray-400 shrink-0">
+                            {sub.assigneeName}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-gray-200 shrink-0">
+                <button
+                  onClick={() => setViewingTask(null)}
+                  className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -540,6 +716,8 @@ function TaskModal({
 
   // All registered users (managers + members)
   const members = users;
+
+  const modalInitials = buildInitialsMap(users);
 
   // Selected user IDs derived from subtasks
   const selectedUserIds = new Set(subtasks.map((s) => s.assigneeId));
@@ -724,7 +902,7 @@ function TaskModal({
                               : "bg-gray-100 text-gray-500"
                           }`}
                         >
-                          {u.name.charAt(0).toUpperCase()}
+                          {modalInitials[u.id] ?? u.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">{u.name}</p>

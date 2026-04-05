@@ -160,7 +160,15 @@ export default function DashboardPage() {
                   </p>
                   <p className="text-gray-400 text-xs">
                     {s.milestone} &middot;{" "}
-                    {new Date(s.completedAt!).toLocaleDateString()}
+                    {new Date(s.completedAt!).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}{" "}
+                    at{" "}
+                    {new Date(s.completedAt!).toLocaleTimeString("en-US", {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
                   </p>
                 </div>
               </div>
