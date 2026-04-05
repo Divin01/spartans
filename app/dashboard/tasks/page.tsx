@@ -49,9 +49,16 @@ export default function TasksPage() {
     await load();
   }
 
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
   async function handleDelete(id: string) {
-    if (!confirm("Delete this task group?")) return;
-    await deleteTask(id);
+    setConfirmDelete(id);
+  }
+
+  async function confirmAndDelete() {
+    if (!confirmDelete) return;
+    await deleteTask(confirmDelete);
+    setConfirmDelete(null);
     await load();
   }
 
@@ -452,6 +459,38 @@ export default function TasksPage() {
           }}
         />
       )}
+
+      {/* Delete confirm dialog */}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div className="w-14 h-14 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="h-7 w-7 text-red-500" />
+            </div>
+            <h3 className="text-lg font-semibold text-gray-900 mb-1">
+              Delete Task
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">
+              Are you sure you want to delete this task? This action cannot be
+              undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAndDelete}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -562,141 +601,175 @@ function TaskModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
       <form
         onSubmit={handleSave}
-        className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden"
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
           <h2 className="text-lg font-semibold">
             {mode === "edit" ? "Edit Task" : "Create Task"}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
+            className="text-gray-400 hover:text-gray-600 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="px-6 py-5 space-y-4">
-          <Field label="Milestone" required>
-            <div className="space-y-2">
-              {existingMilestones.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {existingMilestones.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setMilestone(m)}
-                      className={`text-xs px-2.5 py-1 rounded-full border transition ${
-                        milestone === m
-                          ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium"
-                          : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
+        {/* Body — two columns on desktop */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-100">
+            {/* Left: Task details */}
+            <div className="px-6 py-5 space-y-4">
+              <Field label="Milestone" required>
+                <div className="space-y-2">
+                  {existingMilestones.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {existingMilestones.map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => setMilestone(m)}
+                          className={`text-xs px-2.5 py-1 rounded-full border transition ${
+                            milestone === m
+                              ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium"
+                              : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    value={milestone}
+                    onChange={(e) => setMilestone(e.target.value)}
+                    placeholder={
+                      existingMilestones.length > 0
+                        ? "Or type a new milestone"
+                        : "e.g. 4.1 User Authentication"
+                    }
+                    className="input"
+                    required
+                  />
                 </div>
-              )}
-              <input
-                value={milestone}
-                onChange={(e) => setMilestone(e.target.value)}
-                placeholder={existingMilestones.length > 0 ? "Or type a new milestone" : "e.g. 4.1 User Authentication"}
-                className="input"
-                required
-              />
+              </Field>
+              <Field label="Title" required>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Task title"
+                  className="input"
+                  required
+                />
+              </Field>
+              <Field label="Description">
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional description"
+                  rows={3}
+                  className="input resize-none"
+                />
+              </Field>
+              <Field label="Due Date">
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="input"
+                />
+              </Field>
             </div>
-          </Field>
-          <Field label="Title" required>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task group title"
-              className="input"
-              required
-            />
-          </Field>
-          <Field label="Description">
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Optional description"
-              rows={2}
-              className="input resize-none"
-            />
-          </Field>
-          <Field label="Due Date">
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="input"
-            />
-          </Field>
 
-          {/* Assign to */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Assign to
-            </label>
-            {members.length === 0 ? (
-              <p className="text-sm text-gray-400">No members registered yet</p>
-            ) : (
-              <div className="space-y-1.5">
-                {members.map((u) => {
-                  const selected = selectedUserIds.has(u.id);
-                  return (
-                    <button
-                      key={u.id}
-                      type="button"
-                      onClick={() => toggleUser(u)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left text-sm transition ${
-                        selected
-                          ? "bg-indigo-50 border-indigo-300 text-indigo-800"
-                          : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
-                      }`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+            {/* Right: Assign to users */}
+            <div className="px-6 py-5">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Assign to
+              </label>
+              <p className="text-xs text-gray-400 mb-3">
+                Select the people responsible for this task
+              </p>
+              {members.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  No users registered yet
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {members.map((u) => {
+                    const selected = selectedUserIds.has(u.id);
+                    return (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => toggleUser(u)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left text-sm transition ${
                           selected
-                            ? "bg-indigo-200 text-indigo-800"
-                            : "bg-gray-100 text-gray-500"
+                            ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                            : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
                         }`}
                       >
-                        {u.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{u.name}</p>
-                        <p className="text-xs text-gray-400 truncate">
-                          {u.email}
-                        </p>
-                      </div>
-                      {selected && (
-                        <CheckCircle2 className="h-5 w-5 text-indigo-600 shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            selected
+                              ? "bg-indigo-200 text-indigo-800"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                        >
+                          {u.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium truncate">{u.name}</p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {u.email}
+                          </p>
+                        </div>
+                        <div
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 transition ${
+                            selected
+                              ? "border-indigo-600 bg-indigo-600"
+                              : "border-gray-300"
+                          }`}
+                        >
+                          {selected && (
+                            <CheckCircle2 className="h-4 w-4 text-white" />
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedUserIds.size > 0 && (
+                <p className="text-xs text-indigo-600 font-medium mt-3">
+                  {selectedUserIds.size} user{selectedUserIds.size > 1 ? "s" : ""} selected
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition"
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="px-4 py-2.5 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
+            className="px-5 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {mode === "edit" ? "Save Changes" : "Create Task"}
