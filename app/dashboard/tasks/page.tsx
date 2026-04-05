@@ -247,17 +247,57 @@ export default function TasksPage() {
                           </p>
                         )}
 
+                        {/* Assignee names */}
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {assignees.map((name, i) => (
+                            <span
+                              key={i}
+                              className="inline-flex items-center gap-1 text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full"
+                            >
+                              <span className="w-4 h-4 rounded-full bg-indigo-200 text-indigo-800 text-[9px] font-bold flex items-center justify-center">
+                                {name.charAt(0).toUpperCase()}
+                              </span>
+                              {name.split(" ")[0]}
+                            </span>
+                          ))}
+                        </div>
+
                         {/* Meta row */}
                         <div className="flex items-center gap-3 text-xs text-gray-400 mb-3">
-                          {task.dueDate && (
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(task.dueDate).toLocaleDateString(
-                                "en-US",
-                                { month: "short", day: "numeric" }
-                              )}
-                            </span>
-                          )}
+                          {task.dueDate && (() => {
+                            const now = new Date();
+                            now.setHours(0, 0, 0, 0);
+                            const due = new Date(task.dueDate);
+                            due.setHours(0, 0, 0, 0);
+                            const diff = Math.ceil(
+                              (due.getTime() - now.getTime()) / 86400000
+                            );
+                            const isOverdue = diff < 0;
+                            const label =
+                              diff === 0
+                                ? "Due today"
+                                : isOverdue
+                                ? `${Math.abs(diff)}d overdue`
+                                : `${diff}d left`;
+                            return (
+                              <span
+                                className={`flex items-center gap-1 font-medium ${
+                                  isOverdue
+                                    ? "text-red-500"
+                                    : diff <= 3
+                                    ? "text-amber-500"
+                                    : "text-gray-400"
+                                }`}
+                              >
+                                <Calendar className="h-3 w-3" />
+                                {new Date(task.dueDate).toLocaleDateString(
+                                  "en-US",
+                                  { month: "short", day: "numeric" }
+                                )}
+                                <span className="ml-0.5">({label})</span>
+                              </span>
+                            );
+                          })()}
                           <span className="flex items-center gap-1">
                             <UsersIcon className="h-3 w-3" />
                             {assignees.length}
@@ -329,11 +369,8 @@ export default function TasksPage() {
                                   >
                                     {sub.title}
                                   </span>
-                                  <span
-                                    className="shrink-0 w-6 h-6 rounded-full bg-gray-100 text-[10px] font-bold text-gray-500 flex items-center justify-center"
-                                    title={sub.assigneeName}
-                                  >
-                                    {sub.assigneeName.charAt(0).toUpperCase()}
+                                  <span className="shrink-0 text-xs text-gray-400 truncate max-w-[80px]">
+                                    {sub.assigneeName}
                                   </span>
                                 </div>
                               );
@@ -391,10 +428,11 @@ export default function TasksPage() {
           mode="create"
           users={users}
           userId={user!.id}
+          existingMilestones={Object.keys(milestones)}
           onClose={() => setShowCreate(false)}
-          onDone={() => {
+          onDone={async () => {
             setShowCreate(false);
-            load();
+            await load();
           }}
         />
       )}
@@ -406,10 +444,11 @@ export default function TasksPage() {
           task={editingTask}
           users={users}
           userId={user!.id}
+          existingMilestones={Object.keys(milestones)}
           onClose={() => setEditingTask(null)}
-          onDone={() => {
+          onDone={async () => {
             setEditingTask(null);
-            load();
+            await load();
           }}
         />
       )}
@@ -423,6 +462,7 @@ function TaskModal({
   task,
   users,
   userId,
+  existingMilestones,
   onClose,
   onDone,
 }: {
@@ -430,6 +470,7 @@ function TaskModal({
   task?: Task;
   users: User[];
   userId: string;
+  existingMilestones: string[];
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -456,28 +497,30 @@ function TaskModal({
       completedAt: s.completedAt,
     })) ?? []
   );
-  const [stTitle, setStTitle] = useState("");
-  const [stAssignee, setStAssignee] = useState("");
   const [saving, setSaving] = useState(false);
 
-  function addSubtask() {
-    if (!stTitle.trim() || !stAssignee) return;
-    setSubtasks((p) => [
-      ...p,
-      {
-        title: stTitle.trim(),
-        assigneeId: stAssignee,
-        assigneeName:
-          users.find((u) => u.id === stAssignee)?.name ?? "Unknown",
-        completed: false,
-      },
-    ]);
-    setStTitle("");
-    setStAssignee("");
-  }
+  // All registered users (managers + members)
+  const members = users;
 
-  function removeSubtask(i: number) {
-    setSubtasks((p) => p.filter((_, idx) => idx !== i));
+  // Selected user IDs derived from subtasks
+  const selectedUserIds = new Set(subtasks.map((s) => s.assigneeId));
+
+  function toggleUser(u: User) {
+    if (selectedUserIds.has(u.id)) {
+      // Deselect — remove the subtask for this user
+      setSubtasks((p) => p.filter((s) => s.assigneeId !== u.id));
+    } else {
+      // Select — add a subtask for this user
+      setSubtasks((p) => [
+        ...p,
+        {
+          title: u.name,
+          assigneeId: u.id,
+          assigneeName: u.name,
+          completed: false,
+        },
+      ]);
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -494,7 +537,7 @@ function TaskModal({
         users.find((u) => u.id === s.assigneeId)?.name ??
         "Unknown",
       completed: s.completed ?? false,
-      completedAt: s.completedAt,
+      ...(s.completedAt ? { completedAt: s.completedAt } : {}),
     }));
 
     if (mode === "edit" && task) {
@@ -502,7 +545,7 @@ function TaskModal({
         title: title.trim(),
         description: description.trim(),
         milestone: milestone.trim(),
-        dueDate: dueDate || undefined,
+        ...(dueDate ? { dueDate } : {}),
         subtasks: builtSubtasks,
       });
     } else {
@@ -510,7 +553,7 @@ function TaskModal({
         title: title.trim(),
         description: description.trim(),
         milestone: milestone.trim(),
-        dueDate: dueDate || undefined,
+        ...(dueDate ? { dueDate } : {}),
         createdBy: userId,
         subtasks: builtSubtasks,
       });
@@ -539,13 +582,33 @@ function TaskModal({
 
         <div className="px-6 py-5 space-y-4">
           <Field label="Milestone" required>
-            <input
-              value={milestone}
-              onChange={(e) => setMilestone(e.target.value)}
-              placeholder="e.g. 4.1 User Authentication"
-              className="input"
-              required
-            />
+            <div className="space-y-2">
+              {existingMilestones.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {existingMilestones.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMilestone(m)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition ${
+                        milestone === m
+                          ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium"
+                          : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <input
+                value={milestone}
+                onChange={(e) => setMilestone(e.target.value)}
+                placeholder={existingMilestones.length > 0 ? "Or type a new milestone" : "e.g. 4.1 User Authentication"}
+                className="input"
+                required
+              />
+            </div>
           </Field>
           <Field label="Title" required>
             <input
@@ -574,73 +637,51 @@ function TaskModal({
             />
           </Field>
 
-          {/* Subtasks */}
+          {/* Assign to */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Subtasks
+              Assign to
             </label>
-            {subtasks.length > 0 && (
-              <div className="space-y-2 mb-3">
-                {subtasks.map((s, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 text-sm bg-gray-50 rounded-lg px-3 py-2.5"
-                  >
-                    {s.completed ? (
-                      <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                    ) : (
-                      <Circle className="h-4 w-4 text-gray-300 shrink-0" />
-                    )}
-                    <span className="flex-1 truncate">{s.title}</span>
-                    <span className="text-gray-400 text-xs truncate max-w-[100px]">
-                      {s.assigneeName ??
-                        users.find((u) => u.id === s.assigneeId)?.name}
-                    </span>
+            {members.length === 0 ? (
+              <p className="text-sm text-gray-400">No members registered yet</p>
+            ) : (
+              <div className="space-y-1.5">
+                {members.map((u) => {
+                  const selected = selectedUserIds.has(u.id);
+                  return (
                     <button
+                      key={u.id}
                       type="button"
-                      onClick={() => removeSubtask(i)}
-                      className="text-gray-400 hover:text-red-500 shrink-0"
+                      onClick={() => toggleUser(u)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border text-left text-sm transition ${
+                        selected
+                          ? "bg-indigo-50 border-indigo-300 text-indigo-800"
+                          : "bg-white border-gray-200 text-gray-700 hover:border-gray-300 hover:bg-gray-50"
+                      }`}
                     >
-                      <X className="h-4 w-4" />
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          selected
+                            ? "bg-indigo-200 text-indigo-800"
+                            : "bg-gray-100 text-gray-500"
+                        }`}
+                      >
+                        {u.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate">{u.name}</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {u.email}
+                        </p>
+                      </div>
+                      {selected && (
+                        <CheckCircle2 className="h-5 w-5 text-indigo-600 shrink-0" />
+                      )}
                     </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
-
-            <div className="flex gap-2">
-              <input
-                value={stTitle}
-                onChange={(e) => setStTitle(e.target.value)}
-                placeholder="Subtask title"
-                className="input flex-1"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addSubtask();
-                  }
-                }}
-              />
-              <select
-                value={stAssignee}
-                onChange={(e) => setStAssignee(e.target.value)}
-                className="input w-36"
-              >
-                <option value="">Assign to</option>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={addSubtask}
-                className="px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-gray-600 transition"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         </div>
 
