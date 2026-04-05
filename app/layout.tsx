@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Spartans – Project Manager",
-  description: "Professional project management with Firebase",
+  title: "Spartans - Smart Project Management",
+  description: "Ithaca: Year Project Management platform",
 };
 
 export default function RootLayout({
