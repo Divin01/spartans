@@ -33,7 +33,7 @@ export default function TasksPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
-  const [filter, setFilter] = useState<"all" | "mine">("all");
+  const [filter, setFilter] = useState<"all" | "mine">("mine");
 
   async function load() {
     const [t, u] = await Promise.all([getTasks(), getUsers()]);
@@ -114,16 +114,6 @@ export default function TasksPage() {
         <div className="flex items-center gap-3">
           <div className="flex bg-gray-100 rounded-lg p-1 text-sm">
             <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1.5 rounded-md transition ${
-                filter === "all"
-                  ? "bg-white shadow-sm font-medium"
-                  : "text-gray-500"
-              }`}
-            >
-              All
-            </button>
-            <button
               onClick={() => setFilter("mine")}
               className={`px-3 py-1.5 rounded-md transition ${
                 filter === "mine"
@@ -132,6 +122,16 @@ export default function TasksPage() {
               }`}
             >
               My Tasks
+            </button>
+            <button
+              onClick={() => setFilter("all")}
+              className={`px-3 py-1.5 rounded-md transition ${
+                filter === "all"
+                  ? "bg-white shadow-sm font-medium"
+                  : "text-gray-500"
+              }`}
+            >
+              All
             </button>
           </div>
           {isManager && (
