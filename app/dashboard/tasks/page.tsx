@@ -334,13 +334,13 @@ export default function TasksPage() {
                                 <div
                                   key={sub.id}
                                   className={`flex items-center gap-2.5 py-1 px-2 rounded-lg transition ${
-                                    isMine && !sub.completed
+                                    isMine
                                       ? "hover:bg-indigo-50/50"
                                       : ""
                                   }`}
                                 >
                                   <button
-                                    disabled={!isMine || sub.completed}
+                                    disabled={!isMine}
                                     onClick={() =>
                                       handleToggle(
                                         task,
@@ -349,7 +349,7 @@ export default function TasksPage() {
                                       )
                                     }
                                     className={`shrink-0 transition ${
-                                      isMine && !sub.completed
+                                      isMine
                                         ? "text-gray-300 hover:text-green-500 cursor-pointer"
                                         : ""
                                     }`}

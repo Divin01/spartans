@@ -87,7 +87,7 @@ export async function toggleSubtask(
       ? {
           ...s,
           completed,
-          completedAt: completed ? new Date().toISOString() : undefined,
+          completedAt: completed ? new Date().toISOString() : null,
         }
       : s
   );

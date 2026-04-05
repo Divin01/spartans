@@ -156,7 +156,7 @@ export default function DashboardPage() {
                   <p>
                     <span className="font-medium">{s.assigneeName}</span>{" "}
                     completed{" "}
-                    <span className="font-medium">&ldquo;{s.title}&rdquo;</span>
+                    <span className="font-medium">&ldquo;{s.taskTitle}&rdquo;</span>
                   </p>
                   <p className="text-gray-400 text-xs">
                     {s.milestone} &middot;{" "}
