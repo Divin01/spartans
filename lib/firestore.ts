@@ -43,7 +43,7 @@ export async function createUser(
 // ── Tasks ───────────────────────────────────────────────
 export async function getTasks(): Promise<Task[]> {
   const snap = await getDocs(
-    query(collection(db, "tasks"), orderBy("createdAt", "desc"))
+    query(collection(db, "tasks"), orderBy("createdAt", "asc"))
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Task));
 }
