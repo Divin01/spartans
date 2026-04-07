@@ -111,3 +111,10 @@ export async function getLoginLogs(): Promise<LoginLog[]> {
   );
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as LoginLog));
 }
+
+// ── Manager Passkey ─────────────────────────────────────
+export async function getManagerPasskey(): Promise<string | null> {
+  const snap = await getDoc(doc(db, "settings", "managerPasskey"));
+  if (!snap.exists()) return null;
+  return (snap.data().key as string) ?? null;
+}
