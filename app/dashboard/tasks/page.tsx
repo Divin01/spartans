@@ -23,6 +23,9 @@ import {
   Calendar,
   Users as UsersIcon,
   ClipboardList,
+  Search,
+  ArrowUpDown,
+  Filter,
 } from "lucide-react";
 
 export default function TasksPage() {
@@ -34,6 +37,9 @@ export default function TasksPage() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [viewingTask, setViewingTask] = useState<Task | null>(null);
   const [filter, setFilter] = useState<"all" | "mine">("mine");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "in-progress" | "not-started">("all");
+  const [sortBy, setSortBy] = useState<"oldest" | "newest" | "due-date" | "progress">("oldest");
 
   async function load() {
     const [t, u] = await Promise.all([getTasks(), getUsers()]);
@@ -76,7 +82,8 @@ export default function TasksPage() {
     return acc;
   }, {});
 
-  const filteredMilestones: Record<string, Task[]> =
+  // Apply ownership filter
+  let filtered: Record<string, Task[]> =
     filter === "mine"
       ? Object.fromEntries(
           Object.entries(milestones)
@@ -92,6 +99,71 @@ export default function TasksPage() {
             .filter(([, ts]) => ts.length > 0)
         )
       : milestones;
+
+  // Apply search
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = Object.fromEntries(
+      Object.entries(filtered)
+        .map(
+          ([m, ts]) =>
+            [
+              m,
+              ts.filter(
+                (t) =>
+                  t.title.toLowerCase().includes(q) ||
+                  t.description?.toLowerCase().includes(q) ||
+                  m.toLowerCase().includes(q) ||
+                  t.subtasks.some((s) =>
+                    s.assigneeName?.toLowerCase().includes(q)
+                  )
+              ),
+            ] as [string, Task[]]
+        )
+        .filter(([, ts]) => ts.length > 0)
+    );
+  }
+
+  // Apply status filter
+  if (statusFilter !== "all") {
+    filtered = Object.fromEntries(
+      Object.entries(filtered)
+        .map(([m, ts]) => {
+          const matched = ts.filter((t) => {
+            const done = t.subtasks.filter((s) => s.completed).length;
+            const total = t.subtasks.length;
+            if (statusFilter === "completed") return total > 0 && done === total;
+            if (statusFilter === "in-progress") return done > 0 && done < total;
+            return total === 0 || done === 0;
+          });
+          return [m, matched] as [string, Task[]];
+        })
+        .filter(([, ts]) => ts.length > 0)
+    );
+  }
+
+  // Apply sort within each milestone
+  const filteredMilestones: Record<string, Task[]> = Object.fromEntries(
+    Object.entries(filtered).map(([m, ts]) => {
+      const sorted = [...ts].sort((a, b) => {
+        if (sortBy === "newest")
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        if (sortBy === "due-date") {
+          if (!a.dueDate && !b.dueDate) return 0;
+          if (!a.dueDate) return 1;
+          if (!b.dueDate) return -1;
+          return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+        }
+        if (sortBy === "progress") {
+          const pA = a.subtasks.length > 0 ? a.subtasks.filter((s) => s.completed).length / a.subtasks.length : 0;
+          const pB = b.subtasks.length > 0 ? b.subtasks.filter((s) => s.completed).length / b.subtasks.length : 0;
+          return pA - pB;
+        }
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+      return [m, sorted];
+    })
+  );
 
   if (loading) {
     return (
@@ -143,6 +215,48 @@ export default function TasksPage() {
               New Task
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Search, filter & sort bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search tasks, milestones, or assignees..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+        </div>
+        <div className="flex gap-2">
+          <div className="relative">
+            <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
+              className="appearance-none pl-8 pr-8 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="completed">Completed</option>
+              <option value="in-progress">In Progress</option>
+              <option value="not-started">Not Started</option>
+            </select>
+          </div>
+          <div className="relative">
+            <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+              className="appearance-none pl-8 pr-8 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+            >
+              <option value="oldest">Oldest First</option>
+              <option value="newest">Newest First</option>
+              <option value="due-date">Due Date</option>
+              <option value="progress">Progress</option>
+            </select>
+          </div>
         </div>
       </div>
 
