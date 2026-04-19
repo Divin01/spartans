@@ -26,6 +26,7 @@ import {
   Search,
   ArrowUpDown,
   Filter,
+  ChevronDown,
 } from "lucide-react";
 
 export default function TasksPage() {
@@ -40,6 +41,7 @@ export default function TasksPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "in-progress" | "not-started">("all");
   const [sortBy, setSortBy] = useState<"oldest" | "newest" | "due-date" | "progress">("oldest");
+  const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
 
   async function load() {
     const [t, u] = await Promise.all([getTasks(), getUsers()]);
@@ -284,36 +286,57 @@ export default function TasksPage() {
           const milePct =
             mileTotal > 0 ? Math.round((mileDone / mileTotal) * 100) : 0;
 
+          const isExpanded = expandedMilestones.has(milestone);
+
           return (
             <div key={milestone} className="space-y-4">
               {/* Milestone header */}
-              <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => {
+                  setExpandedMilestones((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(milestone)) next.delete(milestone);
+                    else next.add(milestone);
+                    return next;
+                  });
+                }}
+                className="w-full flex items-center justify-between hover:bg-gray-50 rounded-lg p-2 -m-2 transition"
+              >
                 <div className="flex items-center gap-3">
                   <div className="w-1 h-8 rounded-full bg-indigo-500" />
-                  <div>
+                  <div className="text-left">
                     <h3 className="text-base font-semibold text-gray-900">
                       {milestone}
                     </h3>
                     <p className="text-xs text-gray-400">
-                      {mileDone}/{mileTotal} subtasks completed
+                      {mileDone}/{mileTotal} subtasks completed &middot; {mTasks.length} task{mTasks.length !== 1 ? "s" : ""}
                     </p>
                   </div>
                 </div>
-                <span
-                  className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                    milePct === 100
-                      ? "bg-green-50 text-green-700"
-                      : milePct > 50
-                      ? "bg-blue-50 text-blue-700"
-                      : "bg-amber-50 text-amber-700"
-                  }`}
-                >
-                  {milePct}%
-                </span>
-              </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                      milePct === 100
+                        ? "bg-green-50 text-green-700"
+                        : milePct > 50
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {milePct}%
+                  </span>
+                  <ChevronDown
+                    className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${
+                      isExpanded ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
+              </button>
 
               {/* Cards grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {isExpanded && (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                 {mTasks.map((task) => {
                   const done = task.subtasks.filter(
                     (s) => s.completed
@@ -561,6 +584,7 @@ export default function TasksPage() {
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })
