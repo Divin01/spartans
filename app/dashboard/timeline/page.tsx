@@ -188,18 +188,22 @@ export default function TimelinePage() {
                     )}
 
                     {/* Due date if present */}
-                    {data.tasks.some((t) => t.dueDate) && (
-                      <div className="flex items-center gap-1.5 mt-3 text-xs text-gray-400">
-                        <Clock className="h-3.5 w-3.5" />
-                        Due:{" "}
-                        {data.tasks
-                          .filter((t) => t.dueDate)
-                          .map((t) =>
-                            new Date(t.dueDate!).toLocaleDateString()
-                          )
-                          .join(", ")}
-                      </div>
-                    )}
+                    {data.tasks.some((t) => t.dueDate) && (() => {
+                      const dueDates = data.tasks
+                        .filter((t) => t.dueDate)
+                        .map((t) => new Date(t.dueDate!).getTime());
+                      const maxDue = new Date(Math.max(...dueDates));
+                      return (
+                        <div className="flex items-center gap-1.5 mt-3 text-xs text-gray-400">
+                          <Clock className="h-3.5 w-3.5" />
+                          Due: {maxDue.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );

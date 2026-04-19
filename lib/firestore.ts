@@ -102,6 +102,18 @@ export async function logLogin(user: User): Promise<void> {
     userEmail: user.email,
     userRole: user.role,
     loginAt: new Date().toISOString(),
+    action: "login",
+  });
+}
+
+export async function logTaskView(user: User): Promise<void> {
+  await addDoc(collection(db, "loginLogs"), {
+    userId: user.id,
+    userName: user.name,
+    userEmail: user.email,
+    userRole: user.role,
+    loginAt: new Date().toISOString(),
+    action: "task-view",
   });
 }
 

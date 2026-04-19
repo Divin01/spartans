@@ -33,4 +33,5 @@ export interface LoginLog {
   userEmail: string;
   userRole: "manager" | "member";
   loginAt: string;
+  action?: "login" | "task-view";
 }

@@ -9,6 +9,7 @@ import {
   updateTask,
   deleteTask,
   toggleSubtask,
+  logTaskView,
 } from "@/lib/firestore";
 import type { Task, User, Subtask } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
@@ -53,6 +54,10 @@ export default function TasksPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (user) logTaskView(user);
+  }, [user]);
 
   async function handleToggle(task: Task, subtaskId: string, done: boolean) {
     await toggleSubtask(task.id, subtaskId, done, task.subtasks);
@@ -167,6 +172,238 @@ export default function TasksPage() {
     })
   );
 
+  function renderTaskCard(
+    task: Task,
+    done: number,
+    total: number,
+    pct: number,
+    visibleSubtasks: typeof task.subtasks,
+    assignees: { id: string; name: string }[]
+  ) {
+    return (
+      <div
+        key={task.id}
+        className="group bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-200 flex flex-col"
+      >
+        {/* Card header */}
+        <div className="px-5 pt-5 pb-3">
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <h4 className="font-semibold text-gray-900 leading-snug">
+              {task.title}
+            </h4>
+            {isManager && (
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button
+                  onClick={() => setEditingTask(task)}
+                  className="p-1.5 rounded-lg hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition"
+                  title="Edit task"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => handleDelete(task.id)}
+                  className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition"
+                  title="Delete task"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+          {task.description && (
+            <div className="mb-3">
+              <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">
+                {task.description}
+              </p>
+              {task.description.length > 100 && (
+                <button
+                  onClick={() => setViewingTask(task)}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 transition"
+                >
+                  View more
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Assignee names */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {assignees.map((a) => {
+              const c = getUserColor(a.id);
+              return (
+                <span
+                  key={a.id}
+                  className={`inline-flex items-center gap-1 text-xs ${c.bg} ${c.text} px-2 py-0.5 rounded-full`}
+                >
+                  <span
+                    className={`w-4 h-4 rounded-full ${c.ring} text-[9px] font-bold flex items-center justify-center`}
+                  >
+                    {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
+                  </span>
+                  {a.name.split(" ")[0]}
+                </span>
+              );
+            })}
+          </div>
+
+          {/* Meta row */}
+          <div className="flex items-center gap-3 text-xs text-gray-400 mb-3">
+            {task.dueDate && (() => {
+              const now = new Date();
+              now.setHours(0, 0, 0, 0);
+              const due = new Date(task.dueDate);
+              due.setHours(0, 0, 0, 0);
+              const diff = Math.ceil(
+                (due.getTime() - now.getTime()) / 86400000
+              );
+              const isOverdue = diff < 0;
+              const label =
+                diff === 0
+                  ? "Due today"
+                  : isOverdue
+                  ? `${Math.abs(diff)}d overdue`
+                  : `${diff}d left`;
+              return (
+                <span
+                  className={`flex items-center gap-1 font-medium ${
+                    isOverdue
+                      ? "text-red-500"
+                      : diff <= 3
+                      ? "text-amber-500"
+                      : "text-gray-400"
+                  }`}
+                >
+                  <Calendar className="h-3 w-3" />
+                  {new Date(task.dueDate).toLocaleDateString(
+                    "en-US",
+                    { month: "short", day: "numeric" }
+                  )}
+                  <span className="ml-0.5">({label})</span>
+                </span>
+              );
+            })()}
+            <span className="flex items-center gap-1">
+              <UsersIcon className="h-3 w-3" />
+              {assignees.length}
+            </span>
+          </div>
+
+          {/* Progress bar */}
+          <div className="flex items-center gap-2.5">
+            <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+              <div
+                className={`h-1.5 rounded-full transition-all duration-500 ${
+                  pct === 100 ? "bg-green-500" : "bg-indigo-500"
+                }`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span className="text-xs font-medium text-gray-500 tabular-nums">
+              {done}/{total}
+            </span>
+          </div>
+        </div>
+
+        {/* Subtasks list */}
+        <div className="border-t border-gray-100 px-5 py-3 flex-1">
+          {visibleSubtasks.length === 0 ? (
+            <p className="text-xs text-gray-400 py-1">
+              No subtasks
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {visibleSubtasks.map((sub) => {
+                const isMine = sub.assigneeId === user?.id;
+                return (
+                  <div
+                    key={sub.id}
+                    className={`flex items-center gap-2.5 py-1 px-2 rounded-lg transition ${
+                      isMine
+                        ? "hover:bg-indigo-50/50"
+                        : ""
+                    }`}
+                  >
+                    <button
+                      disabled={!isMine}
+                      onClick={() =>
+                        handleToggle(
+                          task,
+                          sub.id,
+                          !sub.completed
+                        )
+                      }
+                      className={`shrink-0 transition ${
+                        isMine
+                          ? "text-gray-300 hover:text-green-500 cursor-pointer"
+                          : ""
+                      }`}
+                    >
+                      {sub.completed ? (
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-gray-300" />
+                      )}
+                    </button>
+                    <span
+                      className={`flex-1 text-sm truncate ${
+                        sub.completed
+                          ? "line-through text-gray-400"
+                          : "text-gray-700"
+                      }`}
+                    >
+                      {sub.title}
+                    </span>
+                    <span className="shrink-0 text-xs text-gray-400 truncate max-w-[80px]">
+                      {sub.assigneeName}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Assignee avatars footer */}
+        <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
+          <div className="flex -space-x-2">
+            {assignees.slice(0, 4).map((a) => {
+              const c = getUserColor(a.id);
+              return (
+                <div
+                  key={a.id}
+                  className={`w-7 h-7 rounded-full ${c.bg} ${c.text} text-xs font-bold flex items-center justify-center border-2 border-white`}
+                  title={a.name}
+                >
+                  {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
+                </div>
+              );
+            })}
+            {assignees.length > 4 && (
+              <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center border-2 border-white">
+                +{assignees.length - 4}
+              </div>
+            )}
+          </div>
+          <span
+            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              pct === 100
+                ? "bg-green-50 text-green-600"
+                : pct > 0
+                ? "bg-indigo-50 text-indigo-600"
+                : "bg-gray-100 text-gray-500"
+            }`}
+          >
+            {pct === 100
+              ? "Complete"
+              : pct > 0
+              ? "In Progress"
+              : "Not Started"}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -275,14 +512,12 @@ export default function TasksPage() {
         </div>
       ) : (
         Object.entries(filteredMilestones).map(([milestone, mTasks]) => {
-          const mileDone = mTasks.reduce(
-            (a, t) => a + t.subtasks.filter((s) => s.completed).length,
-            0
-          );
-          const mileTotal = mTasks.reduce(
-            (a, t) => a + t.subtasks.length,
-            0
-          );
+          const mileDone = filter === "mine"
+            ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id && s.completed).length, 0)
+            : mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.completed).length, 0);
+          const mileTotal = filter === "mine"
+            ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id).length, 0)
+            : mTasks.reduce((a, t) => a + t.subtasks.length, 0);
           const milePct =
             mileTotal > 0 ? Math.round((mileDone / mileTotal) * 100) : 0;
 
@@ -319,9 +554,9 @@ export default function TasksPage() {
                     className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                       milePct === 100
                         ? "bg-green-50 text-green-700"
-                        : milePct > 50
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-amber-50 text-amber-700"
+                        : milePct > 0
+                        ? "bg-amber-50 text-amber-700"
+                        : "bg-red-50 text-red-600"
                     }`}
                   >
                     {milePct}%
@@ -334,256 +569,22 @@ export default function TasksPage() {
                 </div>
               </button>
 
-              {/* Cards grid */}
+              {/* All tasks behind dropdown */}
               {isExpanded && (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
-                {mTasks.map((task) => {
-                  const done = task.subtasks.filter(
-                    (s) => s.completed
-                  ).length;
-                  const total = task.subtasks.length;
-                  const pct =
-                    total > 0 ? Math.round((done / total) * 100) : 0;
-
-                  const visibleSubtasks =
-                    filter === "mine"
-                      ? task.subtasks.filter(
-                          (s) => s.assigneeId === user?.id
-                        )
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
+                  {mTasks.map((task) => {
+                    const done = task.subtasks.filter((s) => s.completed).length;
+                    const total = task.subtasks.length;
+                    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+                    const visibleSubtasks = filter === "mine"
+                      ? task.subtasks.filter((s) => s.assigneeId === user?.id)
                       : task.subtasks;
+                    const assigneeMap = new Map(task.subtasks.map((s) => [s.assigneeId, s.assigneeName]));
+                    const assignees = [...assigneeMap.entries()].map(([id, name]) => ({ id, name }));
 
-                  // Unique assignees
-                  const assigneeMap = new Map(
-                    task.subtasks.map((s) => [s.assigneeId, s.assigneeName])
-                  );
-                  const assignees = [...assigneeMap.entries()].map(
-                    ([id, name]) => ({ id, name })
-                  );
-
-                  return (
-                    <div
-                      key={task.id}
-                      className="group bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-200 flex flex-col"
-                    >
-                      {/* Card header */}
-                      <div className="px-5 pt-5 pb-3">
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h4 className="font-semibold text-gray-900 leading-snug">
-                            {task.title}
-                          </h4>
-                          {isManager && (
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                              <button
-                                onClick={() => setEditingTask(task)}
-                                className="p-1.5 rounded-lg hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition"
-                                title="Edit task"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(task.id)}
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition"
-                                title="Delete task"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                        {task.description && (
-                          <div className="mb-3">
-                            <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">
-                              {task.description}
-                            </p>
-                            {task.description.length > 100 && (
-                              <button
-                                onClick={() => setViewingTask(task)}
-                                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 transition"
-                              >
-                                View more
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Assignee names */}
-                        <div className="flex flex-wrap gap-1.5 mb-3">
-                          {assignees.map((a) => {
-                            const c = getUserColor(a.id);
-                            return (
-                              <span
-                                key={a.id}
-                                className={`inline-flex items-center gap-1 text-xs ${c.bg} ${c.text} px-2 py-0.5 rounded-full`}
-                              >
-                                <span
-                                  className={`w-4 h-4 rounded-full ${c.ring} text-[9px] font-bold flex items-center justify-center`}
-                                >
-                                  {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
-                                </span>
-                                {a.name.split(" ")[0]}
-                              </span>
-                            );
-                          })}
-                        </div>
-
-                        {/* Meta row */}
-                        <div className="flex items-center gap-3 text-xs text-gray-400 mb-3">
-                          {task.dueDate && (() => {
-                            const now = new Date();
-                            now.setHours(0, 0, 0, 0);
-                            const due = new Date(task.dueDate);
-                            due.setHours(0, 0, 0, 0);
-                            const diff = Math.ceil(
-                              (due.getTime() - now.getTime()) / 86400000
-                            );
-                            const isOverdue = diff < 0;
-                            const label =
-                              diff === 0
-                                ? "Due today"
-                                : isOverdue
-                                ? `${Math.abs(diff)}d overdue`
-                                : `${diff}d left`;
-                            return (
-                              <span
-                                className={`flex items-center gap-1 font-medium ${
-                                  isOverdue
-                                    ? "text-red-500"
-                                    : diff <= 3
-                                    ? "text-amber-500"
-                                    : "text-gray-400"
-                                }`}
-                              >
-                                <Calendar className="h-3 w-3" />
-                                {new Date(task.dueDate).toLocaleDateString(
-                                  "en-US",
-                                  { month: "short", day: "numeric" }
-                                )}
-                                <span className="ml-0.5">({label})</span>
-                              </span>
-                            );
-                          })()}
-                          <span className="flex items-center gap-1">
-                            <UsersIcon className="h-3 w-3" />
-                            {assignees.length}
-                          </span>
-                        </div>
-
-                        {/* Progress bar */}
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex-1 bg-gray-100 rounded-full h-1.5">
-                            <div
-                              className={`h-1.5 rounded-full transition-all duration-500 ${
-                                pct === 100 ? "bg-green-500" : "bg-indigo-500"
-                              }`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                          <span className="text-xs font-medium text-gray-500 tabular-nums">
-                            {done}/{total}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Subtasks list */}
-                      <div className="border-t border-gray-100 px-5 py-3 flex-1">
-                        {visibleSubtasks.length === 0 ? (
-                          <p className="text-xs text-gray-400 py-1">
-                            No subtasks
-                          </p>
-                        ) : (
-                          <div className="space-y-1.5">
-                            {visibleSubtasks.map((sub) => {
-                              const isMine = sub.assigneeId === user?.id;
-                              return (
-                                <div
-                                  key={sub.id}
-                                  className={`flex items-center gap-2.5 py-1 px-2 rounded-lg transition ${
-                                    isMine
-                                      ? "hover:bg-indigo-50/50"
-                                      : ""
-                                  }`}
-                                >
-                                  <button
-                                    disabled={!isMine}
-                                    onClick={() =>
-                                      handleToggle(
-                                        task,
-                                        sub.id,
-                                        !sub.completed
-                                      )
-                                    }
-                                    className={`shrink-0 transition ${
-                                      isMine
-                                        ? "text-gray-300 hover:text-green-500 cursor-pointer"
-                                        : ""
-                                    }`}
-                                  >
-                                    {sub.completed ? (
-                                      <CheckCircle2 className="h-4 w-4 text-green-500" />
-                                    ) : (
-                                      <Circle className="h-4 w-4 text-gray-300" />
-                                    )}
-                                  </button>
-                                  <span
-                                    className={`flex-1 text-sm truncate ${
-                                      sub.completed
-                                        ? "line-through text-gray-400"
-                                        : "text-gray-700"
-                                    }`}
-                                  >
-                                    {sub.title}
-                                  </span>
-                                  <span className="shrink-0 text-xs text-gray-400 truncate max-w-[80px]">
-                                    {sub.assigneeName}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Assignee avatars footer */}
-                      <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between">
-                        <div className="flex -space-x-2">
-                          {assignees.slice(0, 4).map((a) => {
-                            const c = getUserColor(a.id);
-                            return (
-                              <div
-                                key={a.id}
-                                className={`w-7 h-7 rounded-full ${c.bg} ${c.text} text-xs font-bold flex items-center justify-center border-2 border-white`}
-                                title={a.name}
-                              >
-                                {initialsMap[a.id] ?? a.name.charAt(0).toUpperCase()}
-                              </div>
-                            );
-                          })}
-                          {assignees.length > 4 && (
-                            <div className="w-7 h-7 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center border-2 border-white">
-                              +{assignees.length - 4}
-                            </div>
-                          )}
-                        </div>
-                        <span
-                          className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            pct === 100
-                              ? "bg-green-50 text-green-600"
-                              : pct > 0
-                              ? "bg-indigo-50 text-indigo-600"
-                              : "bg-gray-100 text-gray-500"
-                          }`}
-                        >
-                          {pct === 100
-                            ? "Complete"
-                            : pct > 0
-                            ? "In Progress"
-                            : "Not Started"}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    return renderTaskCard(task, done, total, pct, visibleSubtasks, assignees);
+                  })}
+                </div>
               )}
             </div>
           );

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { getLoginLogs } from "@/lib/firestore";
 import type { LoginLog } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
-import { Loader2, ScrollText, Shield, UserIcon } from "lucide-react";
+import { Loader2, ScrollText, Shield, UserIcon, Eye, LogIn } from "lucide-react";
 
 export default function LogsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -57,9 +57,9 @@ export default function LogsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Login Logs</h1>
+        <h1 className="text-2xl font-bold">Activity Logs</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Track when team members sign into the system
+          Track logins and task views by team members
         </p>
       </div>
 
@@ -115,9 +115,19 @@ export default function LogsPage() {
                         <p className="text-sm font-medium text-gray-700">
                           {time}
                         </p>
-                        <p className="text-xs text-gray-400 capitalize">
-                          {log.userRole}
-                        </p>
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+                            log.action === "task-view"
+                              ? "bg-blue-50 text-blue-600"
+                              : "bg-green-50 text-green-600"
+                          }`}
+                        >
+                          {log.action === "task-view" ? (
+                            <><Eye className="h-3 w-3" /> Viewed Tasks</>
+                          ) : (
+                            <><LogIn className="h-3 w-3" /> Login</>
+                          )}
+                        </span>
                       </div>
                     </div>
                   );

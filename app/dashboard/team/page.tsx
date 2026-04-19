@@ -238,6 +238,8 @@ export default function TeamPage() {
                           0
                         );
 
+                        const milePct = mileTotal > 0 ? Math.round((mileDone / mileTotal) * 100) : 0;
+
                         return (
                           <div key={milestone}>
                             <button
@@ -259,7 +261,20 @@ export default function TeamPage() {
                                   <p className="text-xs text-gray-400">{mileDone}/{mileTotal} subtasks &middot; {mTasks.length} task{mTasks.length !== 1 ? "s" : ""}</p>
                                 </div>
                               </div>
-                              <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                                    milePct === 100
+                                      ? "bg-green-50 text-green-700"
+                                      : milePct > 0
+                                      ? "bg-amber-50 text-amber-700"
+                                      : "bg-red-50 text-red-600"
+                                  }`}
+                                >
+                                  {milePct}%
+                                </span>
+                                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                              </div>
                             </button>
 
                             {isOpen && (
@@ -268,9 +283,7 @@ export default function TeamPage() {
                                   const userSubtasks = t.subtasks.filter(
                                     (s) => s.assigneeId === selectedUser.id
                                   );
-                                  const done = userSubtasks.filter(
-                                    (s) => s.completed
-                                  ).length;
+                                  const done = userSubtasks.filter((s) => s.completed).length;
 
                                   return (
                                     <div
