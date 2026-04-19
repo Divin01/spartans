@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { getTasks } from "@/lib/firestore";
 import type { Task } from "@/lib/types";
-import { Loader2, CheckCircle2, Circle, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, Circle, Clock, ChevronDown } from "lucide-react";
 
 export default function TimelinePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getTasks().then((t) => {
@@ -112,8 +113,30 @@ export default function TimelinePage() {
                       />
                     </div>
 
+                    {/* Show/hide tasks toggle */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpandedMilestones((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(name)) next.delete(name);
+                          else next.add(name);
+                          return next;
+                        });
+                      }}
+                      className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform duration-200 ${
+                          expandedMilestones.has(name) ? "rotate-180" : ""
+                        }`}
+                      />
+                      {expandedMilestones.has(name) ? "Hide" : "Show"} tasks ({data.tasks.length})
+                    </button>
+
                     {/* Task groups under this milestone */}
-                    <div className="space-y-3">
+                    {expandedMilestones.has(name) && (
+                    <div className="space-y-3 mt-3">
                       {data.tasks.map((task) => {
                         const tDone = task.subtasks.filter(
                           (s) => s.completed
@@ -162,6 +185,7 @@ export default function TimelinePage() {
                         );
                       })}
                     </div>
+                    )}
 
                     {/* Due date if present */}
                     {data.tasks.some((t) => t.dueDate) && (

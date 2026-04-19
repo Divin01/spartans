@@ -19,6 +19,7 @@ export default function TeamPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     Promise.all([getUsers(), getTasks()]).then(([u, t]) => {
@@ -215,81 +216,130 @@ export default function TeamPage() {
                   <p className="text-sm text-gray-400 text-center py-8">
                     No tasks assigned yet
                   </p>
-                ) : (
-                  <div className="space-y-3">
-                    {userTasks.map((t) => {
-                      const userSubtasks = t.subtasks.filter(
-                        (s) => s.assigneeId === selectedUser.id
-                      );
-                      const done = userSubtasks.filter(
-                        (s) => s.completed
-                      ).length;
+                ) : (() => {
+                  const grouped = userTasks.reduce<Record<string, Task[]>>((acc, t) => {
+                    const key = t.milestone || "Uncategorized";
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(t);
+                    return acc;
+                  }, {});
 
-                      return (
-                        <div
-                          key={t.id}
-                          className="bg-gray-50 rounded-xl p-4"
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-1">
-                            <p className="font-medium text-gray-900 text-sm">
-                              {t.title}
-                            </p>
-                            <span
-                              className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
-                                done === userSubtasks.length
-                                  ? "bg-green-50 text-green-600"
-                                  : "bg-indigo-50 text-indigo-600"
-                              }`}
+                  return (
+                    <div className="space-y-3">
+                      {Object.entries(grouped).map(([milestone, mTasks]) => {
+                        const mKey = `${selectedUser.id}-${milestone}`;
+                        const isOpen = expandedMilestones.has(mKey);
+                        const mileDone = mTasks.reduce(
+                          (a, t) => a + t.subtasks.filter((s) => s.assigneeId === selectedUser.id && s.completed).length,
+                          0
+                        );
+                        const mileTotal = mTasks.reduce(
+                          (a, t) => a + t.subtasks.filter((s) => s.assigneeId === selectedUser.id).length,
+                          0
+                        );
+
+                        return (
+                          <div key={milestone}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setExpandedMilestones((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(mKey)) next.delete(mKey);
+                                  else next.add(mKey);
+                                  return next;
+                                });
+                              }}
+                              className="w-full flex items-center justify-between bg-gray-100 hover:bg-gray-150 rounded-lg px-4 py-3 transition"
                             >
-                              {done}/{userSubtasks.length}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-400 mb-2">
-                            {t.milestone}
-                          </p>
-                          {t.description && (
-                            <p className="text-sm text-gray-500 leading-relaxed mb-2 whitespace-pre-wrap">
-                              {t.description}
-                            </p>
-                          )}
-                          {t.dueDate && (
-                            <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
-                              Due:{" "}
-                              {new Date(t.dueDate).toLocaleDateString("en-US", {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              })}
-                            </p>
-                          )}
-                          <div className="space-y-1">
-                            {userSubtasks.map((s) => (
-                              <div
-                                key={s.id}
-                                className="flex items-center gap-2 text-sm"
-                              >
-                                {s.completed ? (
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
-                                ) : (
-                                  <Circle className="h-3.5 w-3.5 text-gray-300 shrink-0" />
-                                )}
-                                <span
-                                  className={
-                                    s.completed
-                                      ? "line-through text-gray-400"
-                                      : "text-gray-600"
-                                  }
-                                >
-                                  {t.title}
-                                </span>
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-1 h-5 rounded-full bg-indigo-500" />
+                                <div className="text-left">
+                                  <p className="text-sm font-semibold text-gray-900">{milestone}</p>
+                                  <p className="text-xs text-gray-400">{mileDone}/{mileTotal} subtasks &middot; {mTasks.length} task{mTasks.length !== 1 ? "s" : ""}</p>
+                                </div>
                               </div>
-                            ))}
+                              <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`} />
+                            </button>
+
+                            {isOpen && (
+                              <div className="space-y-3 mt-3 pl-3">
+                                {mTasks.map((t) => {
+                                  const userSubtasks = t.subtasks.filter(
+                                    (s) => s.assigneeId === selectedUser.id
+                                  );
+                                  const done = userSubtasks.filter(
+                                    (s) => s.completed
+                                  ).length;
+
+                                  return (
+                                    <div
+                                      key={t.id}
+                                      className="bg-gray-50 rounded-xl p-4"
+                                    >
+                                      <div className="flex items-start justify-between gap-2 mb-1">
+                                        <p className="font-medium text-gray-900 text-sm">
+                                          {t.title}
+                                        </p>
+                                        <span
+                                          className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                                            done === userSubtasks.length
+                                              ? "bg-green-50 text-green-600"
+                                              : "bg-indigo-50 text-indigo-600"
+                                          }`}
+                                        >
+                                          {done}/{userSubtasks.length}
+                                        </span>
+                                      </div>
+                                      {t.description && (
+                                        <p className="text-sm text-gray-500 leading-relaxed mb-2 whitespace-pre-wrap">
+                                          {t.description}
+                                        </p>
+                                      )}
+                                      {t.dueDate && (
+                                        <p className="text-xs text-gray-400 mb-2 flex items-center gap-1">
+                                          Due:{" "}
+                                          {new Date(t.dueDate).toLocaleDateString("en-US", {
+                                            month: "short",
+                                            day: "numeric",
+                                            year: "numeric",
+                                          })}
+                                        </p>
+                                      )}
+                                      <div className="space-y-1">
+                                        {userSubtasks.map((s) => (
+                                          <div
+                                            key={s.id}
+                                            className="flex items-center gap-2 text-sm"
+                                          >
+                                            {s.completed ? (
+                                              <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                                            ) : (
+                                              <Circle className="h-3.5 w-3.5 text-gray-300 shrink-0" />
+                                            )}
+                                            <span
+                                              className={
+                                                s.completed
+                                                  ? "line-through text-gray-400"
+                                                  : "text-gray-600"
+                                              }
+                                            >
+                                              {s.title}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
