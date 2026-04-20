@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTasks } from "@/lib/firestore";
-import type { Task } from "@/lib/types";
+import { getTasks, getReviews } from "@/lib/firestore";
+import type { Task, Review } from "@/lib/types";
 import { Loader2, CheckCircle2, Circle, Clock, ChevronDown } from "lucide-react";
 
 export default function TimelinePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    getTasks().then((t) => {
+    Promise.all([getTasks(), getReviews()]).then(([t, r]) => {
       setTasks(t);
+      setReviews(r);
       setLoading(false);
     });
   }, []);
@@ -25,6 +27,15 @@ export default function TimelinePage() {
     );
   }
 
+  // Review-aware: subtask only counts as done if an approved review exists for that task+user
+  function isEffectivelyDone(taskId: string, sub: { assigneeId: string; completed: boolean }) {
+    if (!sub.completed) return false;
+    const approvedReview = reviews.find(
+      (r) => r.taskId === taskId && r.requesterId === sub.assigneeId && r.status === "approved"
+    );
+    return !!approvedReview;
+  }
+
   // Group by milestone and calculate progress
   const milestones = tasks.reduce<
     Record<string, { tasks: Task[]; done: number; total: number }>
@@ -33,7 +44,7 @@ export default function TimelinePage() {
     if (!acc[key]) acc[key] = { tasks: [], done: 0, total: 0 };
     acc[key].tasks.push(t);
     acc[key].total += t.subtasks.length;
-    acc[key].done += t.subtasks.filter((s) => s.completed).length;
+    acc[key].done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
     return acc;
   }, {});
 
@@ -139,7 +150,7 @@ export default function TimelinePage() {
                     <div className="space-y-3 mt-3">
                       {data.tasks.map((task) => {
                         const tDone = task.subtasks.filter(
-                          (s) => s.completed
+                          (s) => isEffectivelyDone(task.id, s)
                         ).length;
                         const tTotal = task.subtasks.length;
                         return (

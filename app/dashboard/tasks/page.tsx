@@ -12,6 +12,8 @@ import {
   logTaskView,
   getReviews,
   createReview,
+  markTaskAsRead,
+  createActivityLog,
 } from "@/lib/firestore";
 import type { Task, User, Subtask, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
@@ -70,11 +72,6 @@ export default function TasksPage() {
   }, [user]);
 
   async function handleToggle(task: Task, subtaskId: string, done: boolean) {
-    // Block toggle if user has a pending review on this task
-    const pendingReview = reviews.find(
-      (r) => r.taskId === task.id && r.requesterId === user?.id && r.status === "pending"
-    );
-    if (pendingReview) return;
     await toggleSubtask(task.id, subtaskId, done, task.subtasks);
     await load();
   }
@@ -100,6 +97,18 @@ export default function TasksPage() {
       requestedAt: new Date().toISOString(),
       reviewedAt: null,
     });
+    // Log activity for submission
+    await createActivityLog({
+      type: "submitted",
+      taskId: task.id,
+      taskTitle: task.title,
+      milestone: task.milestone,
+      userId: user.id,
+      userName: user.name,
+      reviewerId: reviewer.id,
+      reviewerName: reviewer.name,
+      timestamp: new Date().toISOString(),
+    });
     setSavingSubmit(false);
     setSubmitModal(null);
     setReviewerSelect("");
@@ -122,6 +131,15 @@ export default function TasksPage() {
   const isManager = user?.role === "manager";
 
   const initialsMap = buildInitialsMap(users);
+
+  // Review-aware: subtask counts as done only if completed AND an approved review exists for that task+user
+  function isEffectivelyDone(taskId: string, sub: { assigneeId: string; completed: boolean }) {
+    if (!sub.completed) return false;
+    const approvedReview = reviews.find(
+      (r) => r.taskId === taskId && r.requesterId === sub.assigneeId && r.status === "approved"
+    );
+    return !!approvedReview;
+  }
 
   // Group tasks by milestone
   const milestones = tasks.reduce<Record<string, Task[]>>((acc, t) => {
@@ -179,7 +197,7 @@ export default function TasksPage() {
       Object.entries(filtered)
         .map(([m, ts]) => {
           const matched = ts.filter((t) => {
-            const done = t.subtasks.filter((s) => s.completed).length;
+            const done = t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
             const total = t.subtasks.length;
             if (statusFilter === "completed") return total > 0 && done === total;
             if (statusFilter === "in-progress") return done > 0 && done < total;
@@ -204,8 +222,8 @@ export default function TasksPage() {
           return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
         }
         if (sortBy === "progress") {
-          const pA = a.subtasks.length > 0 ? a.subtasks.filter((s) => s.completed).length / a.subtasks.length : 0;
-          const pB = b.subtasks.length > 0 ? b.subtasks.filter((s) => s.completed).length / b.subtasks.length : 0;
+          const pA = a.subtasks.length > 0 ? a.subtasks.filter((s) => isEffectivelyDone(a.id, s)).length / a.subtasks.length : 0;
+          const pB = b.subtasks.length > 0 ? b.subtasks.filter((s) => isEffectivelyDone(b.id, s)).length / b.subtasks.length : 0;
           return pA - pB;
         }
         return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -246,7 +264,10 @@ export default function TasksPage() {
       <div
         key={task.id}
         className="group bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-200 flex flex-col cursor-pointer"
-        onClick={() => setViewingTask(task)}
+        onClick={() => {
+          setViewingTask(task);
+          if (user) markTaskAsRead(user.id, task.id);
+        }}
       >
         {/* Card header */}
         <div className="px-5 pt-5 pb-3">
@@ -437,14 +458,8 @@ export default function TasksPage() {
                 </span>
               );
             return (
-              <span
-                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                  pct > 0
-                    ? "bg-indigo-50 text-indigo-600"
-                    : "bg-gray-100 text-gray-500"
-                }`}
-              >
-                {pct > 0 ? "In Progress" : "Not Started"}
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                Not Started
               </span>
             );
           })()}
@@ -562,8 +577,8 @@ export default function TasksPage() {
       ) : (
         Object.entries(filteredMilestones).map(([milestone, mTasks]) => {
           const mileDone = filter === "mine"
-            ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id && s.completed).length, 0)
-            : mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.completed).length, 0);
+            ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id && isEffectivelyDone(t.id, s)).length, 0)
+            : mTasks.reduce((a, t) => a + t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length, 0);
           const mileTotal = filter === "mine"
             ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id).length, 0)
             : mTasks.reduce((a, t) => a + t.subtasks.length, 0);
@@ -622,7 +637,7 @@ export default function TasksPage() {
               {isExpanded && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                   {mTasks.map((task) => {
-                    const done = task.subtasks.filter((s) => s.completed).length;
+                    const done = task.subtasks.filter((s) => isEffectivelyDone(task.id, s)).length;
                     const total = task.subtasks.length;
                     const pct = total > 0 ? Math.round((done / total) * 100) : 0;
                     const visibleSubtasks = filter === "mine"
@@ -764,7 +779,7 @@ export default function TasksPage() {
       {/* Task detail modal */}
       {viewingTask && (() => {
         const t = viewingTask;
-        const done = t.subtasks.filter((s) => s.completed).length;
+        const done = t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
         const total = t.subtasks.length;
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         const assigneeMap = new Map(
@@ -776,7 +791,6 @@ export default function TasksPage() {
         const modalReviewStatus = getTaskReviewStatus(t);
         const mySubsForModal = t.subtasks.filter((s) => s.assigneeId === user?.id);
         const allMyDoneModal = mySubsForModal.length > 0 && mySubsForModal.every((s) => s.completed);
-        const isPendingReview = modalReviewStatus === "pending";
 
         return (
           <div
@@ -909,25 +923,19 @@ export default function TasksPage() {
                   <div>
                     <h4 className="text-sm font-medium text-gray-700 mb-2">
                       Subtasks
-                      {isPendingReview && (
-                        <span className="ml-2 text-xs font-normal text-amber-600">
-                          (locked — pending review)
-                        </span>
-                      )}
                     </h4>
                     <div className="space-y-1.5">
                       {t.subtasks.map((sub) => {
                         const isMine = sub.assigneeId === user?.id;
-                        const canToggle = isMine && !isPendingReview;
                         return (
                           <div
                             key={sub.id}
                             className={`flex items-center gap-2.5 py-1.5 px-3 rounded-lg ${
-                              canToggle ? "bg-gray-50 hover:bg-indigo-50/50 transition" : "bg-gray-50"
+                              isMine ? "bg-gray-50 hover:bg-indigo-50/50 transition" : "bg-gray-50"
                             }`}
                           >
                             <button
-                              disabled={!canToggle}
+                              disabled={!isMine}
                               onClick={async () => {
                                 await handleToggle(t, sub.id, !sub.completed);
                                 // Refresh the viewing task with updated data
@@ -936,15 +944,15 @@ export default function TasksPage() {
                                 if (updated) setViewingTask(updated);
                               }}
                               className={`shrink-0 transition ${
-                                canToggle
+                                isMine
                                   ? "cursor-pointer hover:scale-110"
                                   : "cursor-default"
                               }`}
                             >
                               {sub.completed ? (
-                                <CheckCircle2 className={`h-4 w-4 ${canToggle ? "text-green-500" : "text-green-400"}`} />
+                                <CheckCircle2 className={`h-4 w-4 ${isMine ? "text-green-500" : "text-green-400"}`} />
                               ) : (
-                                <Circle className={`h-4 w-4 ${canToggle ? "text-gray-400 hover:text-green-500" : "text-gray-300"}`} />
+                                <Circle className={`h-4 w-4 ${isMine ? "text-gray-400 hover:text-green-500" : "text-gray-300"}`} />
                               )}
                             </button>
                             <span
@@ -980,6 +988,19 @@ export default function TasksPage() {
                   >
                     <Send className="h-4 w-4" />
                     Submit for Review
+                  </button>
+                )}
+                {modalReviewStatus === "not-approved" && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewingTask(null);
+                      setSubmitModal(t);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 transition"
+                  >
+                    <Send className="h-4 w-4" />
+                    Resubmit for Review
                   </button>
                 )}
                 <button

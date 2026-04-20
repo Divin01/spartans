@@ -17,7 +17,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
-import { getReviews, getTasks } from "@/lib/firestore";
+import { getReviews, getTasks, getReadTaskIds } from "@/lib/firestore";
 import type { Review } from "@/lib/types";
 
 const navItems = [
@@ -36,19 +36,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [reviewBadge, setReviewBadge] = useState(0);
   const [taskBadge, setTaskBadge] = useState(0);
-  const [taskBadgeSeen, setTaskBadgeSeen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [user, loading, router]);
-
-  // Mark tasks as seen when on the tasks page
-  useEffect(() => {
-    if (pathname.startsWith("/dashboard/tasks")) {
-      setTaskBadgeSeen(true);
-      setTaskBadge(0);
-    }
-  }, [pathname]);
 
   useEffect(() => {
     if (!user) return;
@@ -62,17 +53,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         ).length;
       setReviewBadge(count);
     });
-    // Task badge: count tasks assigned to user (only show if not already seen)
-    if (!taskBadgeSeen) {
-      getTasks().then((tasks) => {
-        const myTaskCount = tasks.filter((t) =>
-          t.subtasks.some((s) => s.assigneeId === user.id)
+    // Task badge: count tasks assigned to user that haven't been read yet
+    Promise.all([getTasks(), getReadTaskIds(user.id)]).then(
+      ([tasks, readIds]) => {
+        const readSet = new Set(readIds);
+        const unreadCount = tasks.filter(
+          (t) =>
+            t.subtasks.some((s) => s.assigneeId === user.id) &&
+            !readSet.has(t.id)
         ).length;
-        if (!pathname.startsWith("/dashboard/tasks")) {
-          setTaskBadge(myTaskCount);
-        }
-      });
-    }
+        setTaskBadge(unreadCount);
+      }
+    );
   }, [user, pathname]);
 
   if (loading || !user) return null;

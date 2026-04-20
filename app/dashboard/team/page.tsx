@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getUsers, getTasks } from "@/lib/firestore";
-import type { User, Task } from "@/lib/types";
+import { getUsers, getTasks, getReviews } from "@/lib/firestore";
+import type { User, Task, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Loader2,
@@ -17,14 +17,16 @@ import {
 export default function TeamPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    Promise.all([getUsers(), getTasks()]).then(([u, t]) => {
+    Promise.all([getUsers(), getTasks(), getReviews()]).then(([u, t, r]) => {
       setUsers(u);
       setTasks(t);
+      setReviews(r);
       setLoading(false);
     });
   }, []);
@@ -37,6 +39,15 @@ export default function TeamPage() {
     );
   }
 
+  // Review-aware: subtask only counts as done if an approved review exists for that task+user
+  function isEffectivelyDone(taskId: string, sub: { assigneeId: string; completed: boolean }) {
+    if (!sub.completed) return false;
+    const approvedReview = reviews.find(
+      (r) => r.taskId === taskId && r.requesterId === sub.assigneeId && r.status === "approved"
+    );
+    return !!approvedReview;
+  }
+
   function getStats(userId: string) {
     let assigned = 0;
     let completed = 0;
@@ -44,7 +55,7 @@ export default function TeamPage() {
       t.subtasks.forEach((s) => {
         if (s.assigneeId === userId) {
           assigned++;
-          if (s.completed) completed++;
+          if (isEffectivelyDone(t.id, s)) completed++;
         }
       })
     );
@@ -230,7 +241,7 @@ export default function TeamPage() {
                         const mKey = `${selectedUser.id}-${milestone}`;
                         const isOpen = expandedMilestones.has(mKey);
                         const mileDone = mTasks.reduce(
-                          (a, t) => a + t.subtasks.filter((s) => s.assigneeId === selectedUser.id && s.completed).length,
+                          (a, t) => a + t.subtasks.filter((s) => s.assigneeId === selectedUser.id && isEffectivelyDone(t.id, s)).length,
                           0
                         );
                         const mileTotal = mTasks.reduce(
@@ -283,7 +294,7 @@ export default function TeamPage() {
                                   const userSubtasks = t.subtasks.filter(
                                     (s) => s.assigneeId === selectedUser.id
                                   );
-                                  const done = userSubtasks.filter((s) => s.completed).length;
+                                  const done = userSubtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
 
                                   return (
                                     <div

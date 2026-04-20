@@ -51,3 +51,16 @@ export interface Review {
   requestedAt: string;
   reviewedAt: string | null;
 }
+
+export interface ActivityLog {
+  id: string;
+  type: "submitted" | "approved";
+  taskId: string;
+  taskTitle: string;
+  milestone: string;
+  userId: string;
+  userName: string;
+  reviewerId: string;
+  reviewerName: string;
+  timestamp: string;
+}

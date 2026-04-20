@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { getTasks, getUsers, getReviews } from "@/lib/firestore";
-import type { Task, User, Review } from "@/lib/types";
+import { getTasks, getUsers, getReviews, getActivityLogs } from "@/lib/firestore";
+import type { Task, User, Review, ActivityLog } from "@/lib/types";
 import {
   ListTodo,
   CheckCircle2,
@@ -19,13 +19,15 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getTasks(), getUsers(), getReviews()]).then(([t, u, r]) => {
+    Promise.all([getTasks(), getUsers(), getReviews(), getActivityLogs()]).then(([t, u, r, a]) => {
       setTasks(t);
       setUsers(u);
       setReviews(r);
+      setActivityLogs(a);
       setLoading(false);
     });
   }, []);
@@ -38,9 +40,19 @@ export default function DashboardPage() {
     );
   }
 
+  // Review-aware: a subtask counts as "effectively done" only if
+  // it's completed AND there's an approved review for that task+user
+  function isEffectivelyDone(taskId: string, sub: { assigneeId: string; completed: boolean }) {
+    if (!sub.completed) return false;
+    const approvedReview = reviews.find(
+      (r) => r.taskId === taskId && r.requesterId === sub.assigneeId && r.status === "approved"
+    );
+    return !!approvedReview;
+  }
+
   const totalSubtasks = tasks.reduce((a, t) => a + t.subtasks.length, 0);
   const completedSubtasks = tasks.reduce(
-    (a, t) => a + t.subtasks.filter((s) => s.completed).length,
+    (a, t) => a + t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length,
     0
   );
   const mySubtasks = tasks.reduce(
@@ -50,7 +62,7 @@ export default function DashboardPage() {
   const myCompleted = tasks.reduce(
     (a, t) =>
       a +
-      t.subtasks.filter((s) => s.assigneeId === user?.id && s.completed).length,
+      t.subtasks.filter((s) => s.assigneeId === user?.id && isEffectivelyDone(t.id, s)).length,
     0
   );
   const progress =
@@ -86,18 +98,8 @@ export default function DashboardPage() {
     },
   ];
 
-  // Recent activity: last 5 completed subtasks
-  const recentCompleted = tasks
-    .flatMap((t) =>
-      t.subtasks
-        .filter((s) => s.completed && s.completedAt)
-        .map((s) => ({ ...s, taskTitle: t.title, milestone: t.milestone }))
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.completedAt!).getTime() - new Date(a.completedAt!).getTime()
-    )
-    .slice(0, 5);
+  // Recent activity from activity logs
+  const recentActivity = activityLogs.slice(0, 8);
 
   return (
     <div className="space-y-8">
@@ -148,30 +150,46 @@ export default function DashboardPage() {
       {/* Recent Activity */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="font-semibold mb-4">Recent Activity</h3>
-        {recentCompleted.length === 0 ? (
-          <p className="text-sm text-gray-400">No completed subtasks yet.</p>
+        {recentActivity.length === 0 ? (
+          <p className="text-sm text-gray-400">No activity yet.</p>
         ) : (
           <div className="space-y-3">
-            {recentCompleted.map((s) => (
+            {recentActivity.map((log) => (
               <div
-                key={s.id}
+                key={log.id}
                 className="flex items-start gap-3 text-sm"
               >
-                <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                {log.type === "approved" ? (
+                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
+                ) : (
+                  <Clock className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                )}
                 <div>
-                  <p>
-                    <span className="font-medium">{s.assigneeName}</span>{" "}
-                    completed{" "}
-                    <span className="font-medium">&ldquo;{s.taskTitle}&rdquo;</span>
-                  </p>
+                  {log.type === "approved" ? (
+                    <p>
+                      <span className="font-medium">{log.userName}</span>
+                      {" "}completed{" "}
+                      <span className="font-medium">&ldquo;{log.taskTitle}&rdquo;</span>
+                      {" "}approved by{" "}
+                      <span className="font-medium">{log.reviewerName}</span>
+                    </p>
+                  ) : (
+                    <p>
+                      <span className="font-medium">{log.userName}</span>
+                      {" "}submitted{" "}
+                      <span className="font-medium">&ldquo;{log.taskTitle}&rdquo;</span>
+                      {" "}for review to{" "}
+                      <span className="font-medium">{log.reviewerName}</span>
+                    </p>
+                  )}
                   <p className="text-gray-400 text-xs">
-                    {s.milestone} &middot;{" "}
-                    {new Date(s.completedAt!).toLocaleDateString("en-US", {
+                    {log.milestone} &middot;{" "}
+                    {new Date(log.timestamp).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                     })}{" "}
                     at{" "}
-                    {new Date(s.completedAt!).toLocaleTimeString("en-US", {
+                    {new Date(log.timestamp).toLocaleTimeString("en-US", {
                       hour: "numeric",
                       minute: "2-digit",
                     })}

@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog, Review } from "./types";
+import type { User, Task, Subtask, LoginLog, Review, ActivityLog } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -166,4 +166,58 @@ export async function resetSubtasksForUser(
       : s
   );
   await updateDoc(doc(db, "tasks", taskId), { subtasks: updated });
+}
+
+export async function completeSubtasksForUser(
+  taskId: string,
+  userId: string
+): Promise<void> {
+  const taskSnap = await getDoc(doc(db, "tasks", taskId));
+  if (!taskSnap.exists()) return;
+  const task = taskSnap.data() as Task;
+  const updated = task.subtasks.map((s) =>
+    s.assigneeId === userId
+      ? { ...s, completed: true, completedAt: s.completedAt ?? new Date().toISOString() }
+      : s
+  );
+  await updateDoc(doc(db, "tasks", taskId), { subtasks: updated });
+}
+
+// ── Activity Logs ───────────────────────────────────────
+export async function createActivityLog(
+  log: Omit<ActivityLog, "id">
+): Promise<void> {
+  await addDoc(collection(db, "activityLogs"), log);
+}
+
+export async function getActivityLogs(): Promise<ActivityLog[]> {
+  const snap = await getDocs(
+    query(collection(db, "activityLogs"), orderBy("timestamp", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as ActivityLog));
+}
+
+// ── Task Read Tracking ──────────────────────────────────
+export async function markTaskAsRead(
+  userId: string,
+  taskId: string
+): Promise<void> {
+  const ref = doc(db, "taskReads", userId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const data = snap.data();
+    const readIds: string[] = data.readTaskIds ?? [];
+    if (!readIds.includes(taskId)) {
+      await updateDoc(ref, { readTaskIds: [...readIds, taskId] });
+    }
+  } else {
+    await setDoc(ref, { readTaskIds: [taskId] });
+  }
+}
+
+export async function getReadTaskIds(userId: string): Promise<string[]> {
+  const ref = doc(db, "taskReads", userId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return [];
+  return (snap.data().readTaskIds as string[]) ?? [];
 }

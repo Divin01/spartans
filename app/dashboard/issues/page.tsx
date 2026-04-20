@@ -8,6 +8,8 @@ import {
   getReviews,
   updateReview,
   resetSubtasksForUser,
+  completeSubtasksForUser,
+  createActivityLog,
 } from "@/lib/firestore";
 import type { Task, User, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
@@ -42,6 +44,7 @@ export default function IssuesPage() {
     "all" | "pending" | "approved" | "not-approved"
   >("all");
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [approvedExpanded, setApprovedExpanded] = useState(false);
 
   const isManager = user?.role === "manager";
   const initialsMap = buildInitialsMap(users);
@@ -108,6 +111,20 @@ export default function IssuesPage() {
       comment: comment.trim() || null,
       reviewedAt: new Date().toISOString(),
     });
+    // Auto-complete the requester's subtasks in Firestore
+    await completeSubtasksForUser(review.taskId, review.requesterId);
+    // Log activity
+    await createActivityLog({
+      type: "approved",
+      taskId: review.taskId,
+      taskTitle: review.taskTitle,
+      milestone: review.milestone,
+      userId: review.requesterId,
+      userName: review.requesterName,
+      reviewerId: review.reviewerId,
+      reviewerName: review.reviewerName,
+      timestamp: new Date().toISOString(),
+    });
     setSaving(false);
     setComment("");
     setSelectedReview(null);
@@ -127,6 +144,18 @@ export default function IssuesPage() {
     setSaving(false);
     setComment("");
     setSelectedReview(null);
+    await load();
+  }
+
+  async function handleResubmit(review: Review) {
+    setSaving(true);
+    await updateReview(review.id, {
+      status: "pending",
+      comment: null,
+      reviewedAt: null,
+      requestedAt: new Date().toISOString(),
+    });
+    setSaving(false);
     await load();
   }
 
@@ -327,7 +356,21 @@ export default function IssuesPage() {
         </div>
 
         {/* Click to open detail */}
-        <div className="px-5 pb-4 mt-auto">
+        <div className="px-5 pb-4 mt-auto space-y-2">
+          {isNotApproved && review.requesterId === user?.id && (
+            <button
+              onClick={() => handleResubmit(review)}
+              disabled={saving}
+              className="w-full flex items-center justify-center gap-2 text-xs font-medium text-white bg-amber-500 hover:bg-amber-600 py-2 rounded-lg transition disabled:opacity-50"
+            >
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ClipboardList className="h-3.5 w-3.5" />
+              )}
+              Resubmit for Review
+            </button>
+          )}
           <button
             onClick={() => setSelectedReview(review)}
             className="w-full text-center text-xs font-medium text-indigo-600 hover:text-indigo-700 py-2 rounded-lg hover:bg-indigo-50 transition"
@@ -490,24 +533,37 @@ export default function IssuesPage() {
                 </div>
               )}
 
-              {/* Approved group */}
+              {/* Approved group — collapsible dropdown */}
               {filteredMyReviews.filter((r) => r.status === "approved").length >
                 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4" />
-                    Approved (
-                    {
-                      filteredMyReviews.filter((r) => r.status === "approved")
-                        .length
-                    }
-                    )
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {filteredMyReviews
-                      .filter((r) => r.status === "approved")
-                      .map((r) => renderReviewCard(r))}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setApprovedExpanded((prev) => !prev)}
+                    className="w-full flex items-center justify-between hover:bg-gray-50 rounded-lg p-2 -m-2 transition mb-3"
+                  >
+                    <h3 className="text-sm font-semibold text-green-700 flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Approved (
+                      {
+                        filteredMyReviews.filter((r) => r.status === "approved")
+                          .length
+                      }
+                      )
+                    </h3>
+                    <ChevronDown
+                      className={`h-4 w-4 text-gray-400 transition-transform duration-200 ${
+                        approvedExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {approvedExpanded && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {filteredMyReviews
+                        .filter((r) => r.status === "approved")
+                        .map((r) => renderReviewCard(r))}
+                    </div>
+                  )}
                 </div>
               )}
             </>
