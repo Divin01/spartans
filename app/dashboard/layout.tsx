@@ -14,14 +14,18 @@ import {
   Menu,
   X,
   ScrollText,
+  AlertCircle,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
+import { getReviews } from "@/lib/firestore";
+import type { Review } from "@/lib/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
+  { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 
@@ -30,10 +34,26 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [reviewBadge, setReviewBadge] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    getReviews().then((reviews) => {
+      // Count: not-approved reviews where I'm requester + pending reviews where I'm reviewer
+      const count =
+        reviews.filter(
+          (r) => r.requesterId === user.id && r.status === "not-approved"
+        ).length +
+        reviews.filter(
+          (r) => r.reviewerId === user.id && r.status === "pending"
+        ).length;
+      setReviewBadge(count);
+    });
+  }, [user, pathname]);
 
   if (loading || !user) return null;
 
@@ -79,7 +99,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 key={href}
                 href={href}
                 onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition relative ${
                   active
                     ? "bg-indigo-50 text-indigo-700"
                     : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
@@ -87,6 +107,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               >
                 <Icon className="h-5 w-5" />
                 {label}
+                {href === "/dashboard/issues" && reviewBadge > 0 && (
+                  <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {reviewBadge}
+                  </span>
+                )}
               </Link>
             );
           })}

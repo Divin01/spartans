@@ -10,8 +10,9 @@ import {
   deleteTask,
   toggleSubtask,
   logTaskView,
+  getReviews,
 } from "@/lib/firestore";
-import type { Task, User, Subtask } from "@/lib/types";
+import type { Task, User, Subtask, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Plus,
@@ -28,6 +29,8 @@ import {
   ArrowUpDown,
   Filter,
   ChevronDown,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 
 export default function TasksPage() {
@@ -43,11 +46,13 @@ export default function TasksPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "in-progress" | "not-started">("all");
   const [sortBy, setSortBy] = useState<"oldest" | "newest" | "due-date" | "progress">("oldest");
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
+  const [reviews, setReviews] = useState<Review[]>([]);
 
   async function load() {
-    const [t, u] = await Promise.all([getTasks(), getUsers()]);
+    const [t, u, r] = await Promise.all([getTasks(), getUsers(), getReviews()]);
     setTasks(t);
     setUsers(u);
+    setReviews(r);
     setLoading(false);
   }
 
@@ -384,21 +389,49 @@ export default function TasksPage() {
               </div>
             )}
           </div>
-          <span
-            className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              pct === 100
-                ? "bg-green-50 text-green-600"
-                : pct > 0
-                ? "bg-indigo-50 text-indigo-600"
-                : "bg-gray-100 text-gray-500"
-            }`}
-          >
-            {pct === 100
-              ? "Complete"
-              : pct > 0
-              ? "In Progress"
-              : "Not Started"}
-          </span>
+          {(() => {
+            const myReview = reviews.find(
+              (r) => r.taskId === task.id && r.requesterId === user?.id
+            );
+            if (myReview?.status === "pending")
+              return (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                  <Clock className="h-3 w-3" />
+                  Pending Approval
+                </span>
+              );
+            if (myReview?.status === "not-approved")
+              return (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">
+                  <AlertTriangle className="h-3 w-3" />
+                  Not Approved
+                </span>
+              );
+            if (myReview?.status === "approved")
+              return (
+                <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-600">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Approved
+                </span>
+              );
+            return (
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  pct === 100
+                    ? "bg-green-50 text-green-600"
+                    : pct > 0
+                    ? "bg-indigo-50 text-indigo-600"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {pct === 100
+                  ? "Complete"
+                  : pct > 0
+                  ? "In Progress"
+                  : "Not Started"}
+              </span>
+            );
+          })()}
         </div>
       </div>
     );

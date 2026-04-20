@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog } from "./types";
+import type { User, Task, Subtask, LoginLog, Review } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -129,4 +129,26 @@ export async function getManagerPasskey(): Promise<string | null> {
   const snap = await getDoc(doc(db, "settings", "managerPasskey"));
   if (!snap.exists()) return null;
   return (snap.data().key as string) ?? null;
+}
+
+// ── Reviews ─────────────────────────────────────────────
+export async function getReviews(): Promise<Review[]> {
+  const snap = await getDocs(
+    query(collection(db, "reviews"), orderBy("requestedAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Review));
+}
+
+export async function createReview(
+  review: Omit<Review, "id">
+): Promise<string> {
+  const ref = await addDoc(collection(db, "reviews"), review);
+  return ref.id;
+}
+
+export async function updateReview(
+  id: string,
+  data: Partial<Review>
+): Promise<void> {
+  await updateDoc(doc(db, "reviews", id), data as Record<string, unknown>);
 }

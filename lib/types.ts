@@ -35,3 +35,19 @@ export interface LoginLog {
   loginAt: string;
   action?: "login" | "task-view";
 }
+
+export interface Review {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  taskDescription: string;
+  milestone: string;
+  requesterId: string;
+  requesterName: string;
+  reviewerId: string;
+  reviewerName: string;
+  status: "pending" | "approved" | "not-approved";
+  comment: string | null;
+  requestedAt: string;
+  reviewedAt: string | null;
+}
