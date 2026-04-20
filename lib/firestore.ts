@@ -152,3 +152,18 @@ export async function updateReview(
 ): Promise<void> {
   await updateDoc(doc(db, "reviews", id), data as Record<string, unknown>);
 }
+
+export async function resetSubtasksForUser(
+  taskId: string,
+  userId: string
+): Promise<void> {
+  const taskSnap = await getDoc(doc(db, "tasks", taskId));
+  if (!taskSnap.exists()) return;
+  const task = taskSnap.data() as Task;
+  const updated = task.subtasks.map((s) =>
+    s.assigneeId === userId
+      ? { ...s, completed: false, completedAt: null }
+      : s
+  );
+  await updateDoc(doc(db, "tasks", taskId), { subtasks: updated });
+}

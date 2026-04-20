@@ -17,15 +17,15 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
-import { getReviews } from "@/lib/firestore";
+import { getReviews, getTasks } from "@/lib/firestore";
 import type { Review } from "@/lib/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
-  { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 
@@ -35,15 +35,24 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [reviewBadge, setReviewBadge] = useState(0);
+  const [taskBadge, setTaskBadge] = useState(0);
+  const [taskBadgeSeen, setTaskBadgeSeen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [user, loading, router]);
 
+  // Mark tasks as seen when on the tasks page
+  useEffect(() => {
+    if (pathname.startsWith("/dashboard/tasks")) {
+      setTaskBadgeSeen(true);
+      setTaskBadge(0);
+    }
+  }, [pathname]);
+
   useEffect(() => {
     if (!user) return;
     getReviews().then((reviews) => {
-      // Count: not-approved reviews where I'm requester + pending reviews where I'm reviewer
       const count =
         reviews.filter(
           (r) => r.requesterId === user.id && r.status === "not-approved"
@@ -53,6 +62,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         ).length;
       setReviewBadge(count);
     });
+    // Task badge: count tasks assigned to user (only show if not already seen)
+    if (!taskBadgeSeen) {
+      getTasks().then((tasks) => {
+        const myTaskCount = tasks.filter((t) =>
+          t.subtasks.some((s) => s.assigneeId === user.id)
+        ).length;
+        if (!pathname.startsWith("/dashboard/tasks")) {
+          setTaskBadge(myTaskCount);
+        }
+      });
+    }
   }, [user, pathname]);
 
   if (loading || !user) return null;
@@ -107,6 +127,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               >
                 <Icon className="h-5 w-5" />
                 {label}
+                {href === "/dashboard/tasks" && taskBadge > 0 && (
+                  <span className="ml-auto w-5 h-5 bg-green-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {taskBadge}
+                  </span>
+                )}
                 {href === "/dashboard/issues" && reviewBadge > 0 && (
                   <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                     {reviewBadge}

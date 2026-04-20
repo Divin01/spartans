@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { getTasks, getUsers } from "@/lib/firestore";
-import type { Task, User } from "@/lib/types";
+import { getTasks, getUsers, getReviews } from "@/lib/firestore";
+import type { Task, User, Review } from "@/lib/types";
 import {
   ListTodo,
   CheckCircle2,
@@ -11,18 +11,21 @@ import {
   Clock,
   Loader2,
   TrendingUp,
+  AlertCircle,
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([getTasks(), getUsers()]).then(([t, u]) => {
+    Promise.all([getTasks(), getUsers(), getReviews()]).then(([t, u, r]) => {
       setTasks(t);
       setUsers(u);
+      setReviews(r);
       setLoading(false);
     });
   }, []);
@@ -53,6 +56,9 @@ export default function DashboardPage() {
   const progress =
     totalSubtasks > 0 ? Math.round((completedSubtasks / totalSubtasks) * 100) : 0;
 
+  const pendingReviews = reviews.filter((r) => r.status === "pending").length;
+  const approvedReviews = reviews.filter((r) => r.status === "approved").length;
+
   const stats = [
     {
       label: "Total Tasks",
@@ -67,10 +73,10 @@ export default function DashboardPage() {
       color: "bg-green-50 text-green-600",
     },
     {
-      label: "Team Members",
-      value: users.length,
-      icon: Users,
-      color: "bg-purple-50 text-purple-600",
+      label: "Pending Reviews",
+      value: pendingReviews,
+      icon: AlertCircle,
+      color: "bg-amber-50 text-amber-600",
     },
     {
       label: "My Tasks",

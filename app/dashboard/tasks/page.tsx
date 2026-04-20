@@ -11,6 +11,7 @@ import {
   toggleSubtask,
   logTaskView,
   getReviews,
+  createReview,
 } from "@/lib/firestore";
 import type { Task, User, Subtask, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
@@ -31,6 +32,7 @@ import {
   ChevronDown,
   Clock,
   AlertTriangle,
+  Send,
 } from "lucide-react";
 
 export default function TasksPage() {
@@ -47,6 +49,9 @@ export default function TasksPage() {
   const [sortBy, setSortBy] = useState<"oldest" | "newest" | "due-date" | "progress">("oldest");
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [submitModal, setSubmitModal] = useState<Task | null>(null);
+  const [reviewerSelect, setReviewerSelect] = useState("");
+  const [savingSubmit, setSavingSubmit] = useState(false);
 
   async function load() {
     const [t, u, r] = await Promise.all([getTasks(), getUsers(), getReviews()]);
@@ -65,7 +70,39 @@ export default function TasksPage() {
   }, [user]);
 
   async function handleToggle(task: Task, subtaskId: string, done: boolean) {
+    // Block toggle if user has a pending review on this task
+    const pendingReview = reviews.find(
+      (r) => r.taskId === task.id && r.requesterId === user?.id && r.status === "pending"
+    );
+    if (pendingReview) return;
     await toggleSubtask(task.id, subtaskId, done, task.subtasks);
+    await load();
+  }
+
+  async function handleSubmitForReview(task: Task) {
+    if (!user) return;
+    setSavingSubmit(true);
+    const manager = users.find((u) => u.role === "manager");
+    const reviewerId = isManager ? reviewerSelect : manager?.id ?? "";
+    const reviewer = users.find((u) => u.id === reviewerId);
+    if (!reviewer) { setSavingSubmit(false); return; }
+    await createReview({
+      taskId: task.id,
+      taskTitle: task.title,
+      taskDescription: task.description ?? "",
+      milestone: task.milestone,
+      requesterId: user.id,
+      requesterName: user.name,
+      reviewerId: reviewer.id,
+      reviewerName: reviewer.name,
+      status: "pending",
+      comment: null,
+      requestedAt: new Date().toISOString(),
+      reviewedAt: null,
+    });
+    setSavingSubmit(false);
+    setSubmitModal(null);
+    setReviewerSelect("");
     await load();
   }
 
@@ -177,6 +214,24 @@ export default function TasksPage() {
     })
   );
 
+  function getTaskReviewStatus(task: Task) {
+    const myReview = reviews.find(
+      (r) => r.taskId === task.id && r.requesterId === user?.id
+    );
+    if (myReview?.status === "pending") return "pending";
+    if (myReview?.status === "not-approved") return "not-approved";
+    if (myReview?.status === "approved") return "approved";
+    return null;
+  }
+
+  function getBarColor(task: Task, pct: number) {
+    const status = getTaskReviewStatus(task);
+    if (status === "approved") return "bg-green-500";
+    if (status === "pending") return "bg-amber-400";
+    if (status === "not-approved") return "bg-red-400";
+    return pct > 0 ? "bg-indigo-500" : "bg-gray-300";
+  }
+
   function renderTaskCard(
     task: Task,
     done: number,
@@ -185,10 +240,13 @@ export default function TasksPage() {
     visibleSubtasks: typeof task.subtasks,
     assignees: { id: string; name: string }[]
   ) {
+    const reviewStatus = getTaskReviewStatus(task);
+
     return (
       <div
         key={task.id}
-        className="group bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-200 flex flex-col"
+        className="group bg-white rounded-2xl border border-gray-200 hover:border-indigo-200 hover:shadow-md transition-all duration-200 flex flex-col cursor-pointer"
+        onClick={() => setViewingTask(task)}
       >
         {/* Card header */}
         <div className="px-5 pt-5 pb-3">
@@ -197,7 +255,7 @@ export default function TasksPage() {
               {task.title}
             </h4>
             {isManager && (
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={(e) => e.stopPropagation()}>
                 <button
                   onClick={() => setEditingTask(task)}
                   className="p-1.5 rounded-lg hover:bg-indigo-50 text-gray-400 hover:text-indigo-600 transition"
@@ -220,14 +278,6 @@ export default function TasksPage() {
               <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">
                 {task.description}
               </p>
-              {task.description.length > 100 && (
-                <button
-                  onClick={() => setViewingTask(task)}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 transition"
-                >
-                  View more
-                </button>
-              )}
             </div>
           )}
 
@@ -293,13 +343,11 @@ export default function TasksPage() {
             </span>
           </div>
 
-          {/* Progress bar */}
+          {/* Progress bar — amber when pending, green only when approved */}
           <div className="flex items-center gap-2.5">
             <div className="flex-1 bg-gray-100 rounded-full h-1.5">
               <div
-                className={`h-1.5 rounded-full transition-all duration-500 ${
-                  pct === 100 ? "bg-green-500" : "bg-indigo-500"
-                }`}
+                className={`h-1.5 rounded-full transition-all duration-500 ${getBarColor(task, pct)}`}
                 style={{ width: `${pct}%` }}
               />
             </div>
@@ -309,7 +357,7 @@ export default function TasksPage() {
           </div>
         </div>
 
-        {/* Subtasks list */}
+        {/* Subtasks list — read-only preview on card */}
         <div className="border-t border-gray-100 px-5 py-3 flex-1">
           {visibleSubtasks.length === 0 ? (
             <p className="text-xs text-gray-400 py-1">
@@ -317,53 +365,30 @@ export default function TasksPage() {
             </p>
           ) : (
             <div className="space-y-1.5">
-              {visibleSubtasks.map((sub) => {
-                const isMine = sub.assigneeId === user?.id;
-                return (
-                  <div
-                    key={sub.id}
-                    className={`flex items-center gap-2.5 py-1 px-2 rounded-lg transition ${
-                      isMine
-                        ? "hover:bg-indigo-50/50"
-                        : ""
+              {visibleSubtasks.map((sub) => (
+                <div
+                  key={sub.id}
+                  className="flex items-center gap-2.5 py-1 px-2 rounded-lg"
+                >
+                  {sub.completed ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-gray-300 shrink-0" />
+                  )}
+                  <span
+                    className={`flex-1 text-sm truncate ${
+                      sub.completed
+                        ? "line-through text-gray-400"
+                        : "text-gray-700"
                     }`}
                   >
-                    <button
-                      disabled={!isMine}
-                      onClick={() =>
-                        handleToggle(
-                          task,
-                          sub.id,
-                          !sub.completed
-                        )
-                      }
-                      className={`shrink-0 transition ${
-                        isMine
-                          ? "text-gray-300 hover:text-green-500 cursor-pointer"
-                          : ""
-                      }`}
-                    >
-                      {sub.completed ? (
-                        <CheckCircle2 className="h-4 w-4 text-green-500" />
-                      ) : (
-                        <Circle className="h-4 w-4 text-gray-300" />
-                      )}
-                    </button>
-                    <span
-                      className={`flex-1 text-sm truncate ${
-                        sub.completed
-                          ? "line-through text-gray-400"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {sub.title}
-                    </span>
-                    <span className="shrink-0 text-xs text-gray-400 truncate max-w-[80px]">
-                      {sub.assigneeName}
-                    </span>
-                  </div>
-                );
-              })}
+                    {sub.title}
+                  </span>
+                  <span className="shrink-0 text-xs text-gray-400 truncate max-w-[80px]">
+                    {sub.assigneeName}
+                  </span>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -390,24 +415,21 @@ export default function TasksPage() {
             )}
           </div>
           {(() => {
-            const myReview = reviews.find(
-              (r) => r.taskId === task.id && r.requesterId === user?.id
-            );
-            if (myReview?.status === "pending")
+            if (reviewStatus === "pending")
               return (
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
                   <Clock className="h-3 w-3" />
                   Pending Approval
                 </span>
               );
-            if (myReview?.status === "not-approved")
+            if (reviewStatus === "not-approved")
               return (
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600">
                   <AlertTriangle className="h-3 w-3" />
                   Not Approved
                 </span>
               );
-            if (myReview?.status === "approved")
+            if (reviewStatus === "approved")
               return (
                 <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-50 text-green-600">
                   <CheckCircle2 className="h-3 w-3" />
@@ -417,18 +439,12 @@ export default function TasksPage() {
             return (
               <span
                 className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                  pct === 100
-                    ? "bg-green-50 text-green-600"
-                    : pct > 0
+                  pct > 0
                     ? "bg-indigo-50 text-indigo-600"
                     : "bg-gray-100 text-gray-500"
                 }`}
               >
-                {pct === 100
-                  ? "Complete"
-                  : pct > 0
-                  ? "In Progress"
-                  : "Not Started"}
+                {pct > 0 ? "In Progress" : "Not Started"}
               </span>
             );
           })()}
@@ -687,17 +703,80 @@ export default function TasksPage() {
         </div>
       )}
 
+      {/* Submit for review modal */}
+      {submitModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => { setSubmitModal(null); setReviewerSelect(""); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center">
+                <Send className="h-5 w-5 text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">Submit for Review</h3>
+                <p className="text-xs text-gray-400">{submitModal.title}</p>
+              </div>
+            </div>
+            {isManager ? (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Select Reviewer</label>
+                <select
+                  value={reviewerSelect}
+                  onChange={(e) => setReviewerSelect(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">Choose a reviewer...</option>
+                  {users.filter((u) => u.id !== user?.id).map((u) => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 mb-4">
+                This will be sent to the project manager for review.
+              </p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setSubmitModal(null); setReviewerSelect(""); }}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSubmitForReview(submitModal)}
+                disabled={savingSubmit || (isManager && !reviewerSelect)}
+                className="flex-1 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
+              >
+                {savingSubmit && <Loader2 className="h-4 w-4 animate-spin" />}
+                Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Task detail modal */}
       {viewingTask && (() => {
         const t = viewingTask;
         const done = t.subtasks.filter((s) => s.completed).length;
         const total = t.subtasks.length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         const assigneeMap = new Map(
           t.subtasks.map((s) => [s.assigneeId, s.assigneeName])
         );
         const taskAssignees = [...assigneeMap.entries()].map(
           ([id, name]) => ({ id, name })
         );
+        const modalReviewStatus = getTaskReviewStatus(t);
+        const mySubsForModal = t.subtasks.filter((s) => s.assigneeId === user?.id);
+        const allMyDoneModal = mySubsForModal.length > 0 && mySubsForModal.every((s) => s.completed);
+        const isPendingReview = modalReviewStatus === "pending";
 
         return (
           <div
@@ -716,12 +795,32 @@ export default function TasksPage() {
                   </h2>
                   <p className="text-xs text-gray-400 mt-0.5">{t.milestone}</p>
                 </div>
-                <button
-                  onClick={() => setViewingTask(null)}
-                  className="text-gray-400 hover:text-gray-600 transition shrink-0 ml-3"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+                <div className="flex items-center gap-3 shrink-0 ml-3">
+                  {modalReviewStatus === "pending" && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
+                      <Clock className="h-3 w-3" />
+                      Pending
+                    </span>
+                  )}
+                  {modalReviewStatus === "approved" && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-600">
+                      <CheckCircle2 className="h-3 w-3" />
+                      Approved
+                    </span>
+                  )}
+                  {modalReviewStatus === "not-approved" && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600">
+                      <AlertTriangle className="h-3 w-3" />
+                      Rejected
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setViewingTask(null)}
+                    className="text-gray-400 hover:text-gray-600 transition"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Body */}
@@ -756,12 +855,27 @@ export default function TasksPage() {
                   </div>
                   <span
                     className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-                      done === total && total > 0
+                      modalReviewStatus === "approved"
                         ? "bg-green-50 text-green-600"
+                        : modalReviewStatus === "pending"
+                        ? "bg-amber-50 text-amber-700"
                         : "bg-indigo-50 text-indigo-600"
                     }`}
                   >
                     {done}/{total} done
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="flex items-center gap-2.5">
+                  <div className="flex-1 bg-gray-100 rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all duration-500 ${getBarColor(t, pct)}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-medium text-gray-500 tabular-nums">
+                    {pct}%
                   </span>
                 </div>
 
@@ -790,44 +904,84 @@ export default function TasksPage() {
                   </div>
                 </div>
 
-                {/* Subtasks */}
+                {/* Subtasks — interactive toggle here */}
                 {total > 0 && (
                   <div>
                     <h4 className="text-sm font-medium text-gray-700 mb-2">
                       Subtasks
+                      {isPendingReview && (
+                        <span className="ml-2 text-xs font-normal text-amber-600">
+                          (locked — pending review)
+                        </span>
+                      )}
                     </h4>
                     <div className="space-y-1.5">
-                      {t.subtasks.map((sub) => (
-                        <div
-                          key={sub.id}
-                          className="flex items-center gap-2.5 py-1.5 px-3 rounded-lg bg-gray-50"
-                        >
-                          {sub.completed ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                          ) : (
-                            <Circle className="h-4 w-4 text-gray-300 shrink-0" />
-                          )}
-                          <span
-                            className={`flex-1 text-sm ${
-                              sub.completed
-                                ? "line-through text-gray-400"
-                                : "text-gray-700"
+                      {t.subtasks.map((sub) => {
+                        const isMine = sub.assigneeId === user?.id;
+                        const canToggle = isMine && !isPendingReview;
+                        return (
+                          <div
+                            key={sub.id}
+                            className={`flex items-center gap-2.5 py-1.5 px-3 rounded-lg ${
+                              canToggle ? "bg-gray-50 hover:bg-indigo-50/50 transition" : "bg-gray-50"
                             }`}
                           >
-                            {sub.title}
-                          </span>
-                          <span className="text-xs text-gray-400 shrink-0">
-                            {sub.assigneeName}
-                          </span>
-                        </div>
-                      ))}
+                            <button
+                              disabled={!canToggle}
+                              onClick={async () => {
+                                await handleToggle(t, sub.id, !sub.completed);
+                                // Refresh the viewing task with updated data
+                                const [freshTasks] = await Promise.all([getTasks()]);
+                                const updated = freshTasks.find((ft) => ft.id === t.id);
+                                if (updated) setViewingTask(updated);
+                              }}
+                              className={`shrink-0 transition ${
+                                canToggle
+                                  ? "cursor-pointer hover:scale-110"
+                                  : "cursor-default"
+                              }`}
+                            >
+                              {sub.completed ? (
+                                <CheckCircle2 className={`h-4 w-4 ${canToggle ? "text-green-500" : "text-green-400"}`} />
+                              ) : (
+                                <Circle className={`h-4 w-4 ${canToggle ? "text-gray-400 hover:text-green-500" : "text-gray-300"}`} />
+                              )}
+                            </button>
+                            <span
+                              className={`flex-1 text-sm ${
+                                sub.completed
+                                  ? "line-through text-gray-400"
+                                  : "text-gray-700"
+                              }`}
+                            >
+                              {sub.title}
+                            </span>
+                            <span className="text-xs text-gray-400 shrink-0">
+                              {sub.assigneeName}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Footer */}
-              <div className="px-6 py-4 border-t border-gray-200 shrink-0">
+              {/* Footer — Submit for review or close */}
+              <div className="px-6 py-4 border-t border-gray-200 shrink-0 space-y-2">
+                {allMyDoneModal && !modalReviewStatus && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setViewingTask(null);
+                      setSubmitModal(t);
+                    }}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition"
+                  >
+                    <Send className="h-4 w-4" />
+                    Submit for Review
+                  </button>
+                )}
                 <button
                   onClick={() => setViewingTask(null)}
                   className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
