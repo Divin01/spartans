@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getUsers, getTasks, getReviews } from "@/lib/firestore";
+import { useAuth } from "@/lib/auth-context";
+import { getUsers, getTasks, getReviews, createUser } from "@/lib/firestore";
 import type { User, Task, Review } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
@@ -12,23 +13,31 @@ import {
   Circle,
   ChevronDown,
   X,
+  Plus,
 } from "lucide-react";
 
 export default function TeamPage() {
+  const { user } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
+  const [showAddUser, setShowAddUser] = useState(false);
+
+  const isManager = user?.role === "manager";
+
+  async function load() {
+    const [u, t, r] = await Promise.all([getUsers(), getTasks(), getReviews()]);
+    setUsers(u);
+    setTasks(t);
+    setReviews(r);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    Promise.all([getUsers(), getTasks(), getReviews()]).then(([u, t, r]) => {
-      setUsers(u);
-      setTasks(t);
-      setReviews(r);
-      setLoading(false);
-    });
+    load();
   }, []);
 
   if (loading) {
@@ -72,11 +81,22 @@ export default function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Team</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          {users.length} member{users.length !== 1 && "s"}
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Team</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {users.length} member{users.length !== 1 && "s"}
+          </p>
+        </div>
+        {isManager && (
+          <button
+            onClick={() => setShowAddUser(true)}
+            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm"
+          >
+            <Plus className="h-4 w-4" />
+            Add User
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -369,6 +389,143 @@ export default function TeamPage() {
           </div>
         );
       })()}
+      {showAddUser && (
+        <AddUserModal
+          onClose={() => setShowAddUser(false)}
+          onDone={async () => {
+            setShowAddUser(false);
+            await load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddUserModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"member" | "manager">("member");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim() || !email.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await createUser({ name: name.trim(), email: email.trim().toLowerCase(), role });
+      onDone();
+    } catch {
+      setError("Failed to create user. Please try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
+      <form
+        onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <h2 className="text-lg font-semibold">Add New User</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Full Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Divine Mathem's"
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Email <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="e.g. john@example.com"
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Role
+            </label>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setRole("member")}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition ${
+                  role === "member"
+                    ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                    : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                <UserIcon className="h-4 w-4" />
+                Member
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("manager")}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition ${
+                  role === "manager"
+                    ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                    : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                }`}
+              >
+                <Shield className="h-4 w-4" />
+                Manager
+              </button>
+            </div>
+          </div>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">
+              {error}
+            </p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-5 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Add User
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

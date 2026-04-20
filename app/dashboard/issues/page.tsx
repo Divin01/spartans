@@ -789,59 +789,48 @@ export default function IssuesPage() {
 
                   {/* Review actions — only for reviewer on pending reviews */}
                   {isReviewer && isPending && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                          Comment
-                        </label>
-                        <textarea
-                          value={comment}
-                          onChange={(e) => setComment(e.target.value)}
-                          placeholder="Add a comment (required for rejection)..."
-                          rows={3}
-                          className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                        />
-                      </div>
-                      <div className="flex gap-3">
-                        <button
-                          onClick={() => handleReject(r)}
-                          disabled={saving || !comment.trim()}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 transition border border-red-200"
-                        >
-                          {saving && (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          )}
-                          <AlertTriangle className="h-4 w-4" />
-                          Reject
-                        </button>
-                        <button
-                          onClick={() => handleApprove(r)}
-                          disabled={saving}
-                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition"
-                        >
-                          {saving && (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          )}
-                          <CheckCircle2 className="h-4 w-4" />
-                          Approve
-                        </button>
-                      </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Comment
+                      </label>
+                      <textarea
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        placeholder="Add a comment (required for rejection)..."
+                        rows={3}
+                        className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+                      />
                     </div>
                   )}
                 </div>
 
-                {/* Footer */}
-                <div className="px-6 py-4 border-t border-gray-200 shrink-0">
-                  <button
-                    onClick={() => {
-                      setSelectedReview(null);
-                      setComment("");
-                    }}
-                    className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 transition"
-                  >
-                    Close
-                  </button>
-                </div>
+                {/* Footer — action buttons for reviewer, nothing otherwise */}
+                {isReviewer && isPending && (
+                  <div className="px-6 py-4 border-t border-gray-200 shrink-0 flex gap-3">
+                    <button
+                      onClick={() => handleReject(r)}
+                      disabled={saving || !comment.trim()}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 transition border border-red-200"
+                    >
+                      {saving && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      <AlertTriangle className="h-4 w-4" />
+                      Reject
+                    </button>
+                    <button
+                      onClick={() => handleApprove(r)}
+                      disabled={saving}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition"
+                    >
+                      {saving && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      <CheckCircle2 className="h-4 w-4" />
+                      Approve
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           );
