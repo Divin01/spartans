@@ -27,7 +27,7 @@ import {
   Filter,
 } from "lucide-react";
 
-type Tab = "my-issues" | "review-requests";
+type Tab = "my-issues" | "review-requests" | "all-issues";
 
 export default function IssuesPage() {
   const { user } = useAuth();
@@ -102,6 +102,7 @@ export default function IssuesPage() {
         );
       })
     : incomingReviews;
+  const filteredAllReviews = filterReviews(reviews);
 
   // ── Handlers ──────────────────────────────────────────
   async function handleApprove(review: Review) {
@@ -436,6 +437,16 @@ export default function IssuesPage() {
             )}
           </button>
         )}
+        <button
+          onClick={() => setTab("all-issues")}
+          className={`px-4 py-2 rounded-md transition ${
+            tab === "all-issues"
+              ? "bg-white shadow-sm font-medium"
+              : "text-gray-500"
+          }`}
+        >
+          All Issues
+        </button>
       </div>
 
       {/* Search & filter bar */}
@@ -450,7 +461,7 @@ export default function IssuesPage() {
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
         </div>
-        {tab === "my-issues" && (
+        {(tab === "my-issues" || tab === "all-issues") && (
           <div className="relative">
             <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
             <select
@@ -592,6 +603,65 @@ export default function IssuesPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {filteredIncoming.map((r) => renderReviewCard(r))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── All Issues Tab ────────────────────────────── */}
+      {tab === "all-issues" && (
+        <div className="space-y-8">
+          {filteredAllReviews.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+                <ClipboardList className="h-8 w-8 text-gray-300" />
+              </div>
+              <p className="text-lg font-medium text-gray-500">
+                {search || statusFilter !== "all"
+                  ? "No matching issues"
+                  : "No issues yet"}
+              </p>
+              <p className="text-sm text-gray-400 mt-1">
+                {search || statusFilter !== "all"
+                  ? "Try adjusting your search or filter"
+                  : "No review requests have been submitted yet"}
+              </p>
+            </div>
+          ) : (
+            <>
+              {filteredAllReviews.filter((r) => r.status === "not-approved").length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-red-600 mb-3 flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    Not Approved ({filteredAllReviews.filter((r) => r.status === "not-approved").length})
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredAllReviews.filter((r) => r.status === "not-approved").map((r) => renderReviewCard(r))}
+                  </div>
+                </div>
+              )}
+              {filteredAllReviews.filter((r) => r.status === "pending").length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-amber-700 mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Pending Approval ({filteredAllReviews.filter((r) => r.status === "pending").length})
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredAllReviews.filter((r) => r.status === "pending").map((r) => renderReviewCard(r))}
+                  </div>
+                </div>
+              )}
+              {filteredAllReviews.filter((r) => r.status === "approved").length > 0 && (
+                <div>
+                  <h3 className="text-sm font-semibold text-green-700 mb-3 flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Approved ({filteredAllReviews.filter((r) => r.status === "approved").length})
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {filteredAllReviews.filter((r) => r.status === "approved").map((r) => renderReviewCard(r))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
