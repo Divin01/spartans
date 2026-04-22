@@ -15,6 +15,7 @@ import {
   X,
   ScrollText,
   AlertCircle,
+  BookOpen,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
 import { getReviews, getTasks, getReadTaskIds } from "@/lib/firestore";
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
+  { href: "/dashboard/policy", label: "Group Rules & Policy", icon: BookOpen },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 
