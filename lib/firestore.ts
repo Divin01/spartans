@@ -135,7 +135,8 @@ export async function getManagerPasskey(): Promise<string | null> {
 export async function getCashierPasskey(): Promise<string | null> {
   const snap = await getDoc(doc(db, "settings", "cashierPasskey"));
   if (!snap.exists()) return null;
-  return (snap.data().key as string) ?? null;
+  const key = (snap.data().key as string) ?? "";
+  return key.length > 0 ? key : null;
 }
 
 export async function setCashierPasskey(key: string): Promise<void> {

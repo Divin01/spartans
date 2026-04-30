@@ -15,7 +15,6 @@ import {
   X,
   Plus,
   Wallet,
-  Lock,
 } from "lucide-react";
 
 export default function TeamPage() {
@@ -31,8 +30,6 @@ export default function TeamPage() {
   const [showAssignCashier, setShowAssignCashier] = useState(false);
   const [assigningCashier, setAssigningCashier] = useState(false);
   const [selectedCashierId, setSelectedCashierId] = useState("");
-  const [cashierPasskeyInput, setCashierPasskeyInput] = useState("");
-  const [cashierPasskeyStep, setCashierPasskeyStep] = useState(false);
 
   const isManager = user?.role === "manager";
 
@@ -100,7 +97,7 @@ export default function TeamPage() {
         <div className="flex gap-2 shrink-0">
           {isManager && (
             <button
-              onClick={() => { setSelectedCashierId(cashier?.userId ?? ""); setCashierPasskeyInput(""); setCashierPasskeyStep(false); setShowAssignCashier(true); }}
+              onClick={() => { setSelectedCashierId(cashier?.userId ?? ""); setShowAssignCashier(true); }}
               className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm"
             >
               <Wallet className="h-4 w-4" />
@@ -444,106 +441,50 @@ export default function TeamPage() {
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div>
-                <h2 className="text-base font-semibold text-gray-900">
-                  {cashierPasskeyStep ? "Set Cashier Passkey" : "Assign Cashier"}
-                </h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {cashierPasskeyStep ? "Set a secure passkey for the cashier's login" : "Select the finance cashier for the project"}
-                </p>
+                <h2 className="text-base font-semibold text-gray-900">Assign Cashier</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Select the finance cashier for the project</p>
               </div>
               <button onClick={() => setShowAssignCashier(false)} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="px-6 py-5 space-y-3">
-              {!cashierPasskeyStep ? (
-                users.map((u) => (
-                  <button
-                    key={u.id}
-                    type="button"
-                    onClick={() => setSelectedCashierId(u.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition text-left ${
-                      selectedCashierId === u.id
-                        ? "border-indigo-400 bg-indigo-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
-                      {u.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
-                      <p className="text-xs text-gray-400 truncate">{u.email}</p>
-                    </div>
-                    {selectedCashierId === u.id && (
-                      <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 ml-auto" />
-                    )}
-                  </button>
-                ))
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3 bg-amber-50 border border-amber-100 rounded-xl p-3">
-                    <Lock className="h-4 w-4 text-amber-600 shrink-0" />
-                    <p className="text-sm text-amber-800">
-                      Set a passkey for <strong>{users.find((u) => u.id === selectedCashierId)?.name}</strong>. They will need this to log in.
-                    </p>
+              {users.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => setSelectedCashierId(u.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition text-left ${
+                    selectedCashierId === u.id
+                      ? "border-indigo-400 bg-indigo-50"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
+                    {u.name.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Passkey</label>
-                    <input
-                      type="password"
-                      value={cashierPasskeyInput}
-                      onChange={(e) => setCashierPasskeyInput(e.target.value)}
-                      placeholder="Min. 6 characters"
-                      autoFocus
-                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                    />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{u.email}</p>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Confirm Passkey</label>
-                    <input
-                      type="password"
-                      placeholder="Re-enter passkey"
-                      onPaste={(e) => e.preventDefault()}
-                      className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 [&:not(:placeholder-shown)]:valid:border-green-400"
-                      onChange={(e) => {
-                        // handled in confirm handler
-                      }}
-                      id="cashierPasskeyConfirm"
-                    />
-                  </div>
-                </div>
-              )}
+                  {selectedCashierId === u.id && (
+                    <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 ml-auto" />
+                  )}
+                </button>
+              ))}
             </div>
             <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={() => {
-                  if (cashierPasskeyStep) {
-                    setCashierPasskeyStep(false);
-                    setCashierPasskeyInput("");
-                  } else {
-                    setShowAssignCashier(false);
-                  }
-                }}
+                onClick={() => setShowAssignCashier(false)}
                 className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
               >
-                {cashierPasskeyStep ? "Back" : "Cancel"}
+                Cancel
               </button>
               <button
                 type="button"
-                disabled={!selectedCashierId || assigningCashier || (cashierPasskeyStep && cashierPasskeyInput.length < 6)}
+                disabled={!selectedCashierId || assigningCashier}
                 onClick={async () => {
-                  if (!cashierPasskeyStep) {
-                    setCashierPasskeyStep(true);
-                    return;
-                  }
-                  const confirmEl = document.getElementById("cashierPasskeyConfirm") as HTMLInputElement | null;
-                  const confirmVal = confirmEl?.value ?? "";
-                  if (cashierPasskeyInput !== confirmVal) {
-                    alert("Passkeys do not match.");
-                    return;
-                  }
                   const selected = users.find((u) => u.id === selectedCashierId);
                   if (!selected || !user) return;
                   setAssigningCashier(true);
@@ -555,18 +496,17 @@ export default function TeamPage() {
                       assignedBy: user.name,
                       assignedAt: new Date().toISOString(),
                     }),
-                    setCashierPasskey(cashierPasskeyInput),
+                    // Clear passkey so new cashier must create their own on first login
+                    setCashierPasskey(""),
                   ]);
                   setAssigningCashier(false);
-                  setCashierPasskeyStep(false);
-                  setCashierPasskeyInput("");
                   setShowAssignCashier(false);
                   await load();
                 }}
                 className="px-5 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
               >
                 {assigningCashier && <Loader2 className="h-4 w-4 animate-spin" />}
-                {cashierPasskeyStep ? "Assign & Save" : "Next"}
+                Assign
               </button>
             </div>
           </div>

@@ -19,7 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
-import { getReviews, getTasks, getReadTaskIds, getDeposits, getCashier } from "@/lib/firestore";
+import { getReviews, getTasks, getReadTaskIds, getDeposits, getCashier, getCashierPasskey } from "@/lib/firestore";
 import type { Review } from "@/lib/types";
 
 const navItems = [
@@ -45,6 +45,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [user, loading, router]);
+
+  // If the cashier has been re-assigned (passkey cleared), force them back to login to create a new one
+  useEffect(() => {
+    if (!user || user.role === "manager") return;
+    Promise.all([getCashier(), getCashierPasskey()]).then(([cashierSetting, key]) => {
+      if (cashierSetting && cashierSetting.userId === user.id && !key) {
+        logout();
+        router.replace("/");
+      }
+    });
+  }, [user, router, logout]);
 
   useEffect(() => {
     if (!user) return;
