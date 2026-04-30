@@ -90,6 +90,8 @@ export default function DashboardPage() {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [filterPeriod, setFilterPeriod] = useState<"week" | "month" | "all">("all");
+  const [filterMilestone, setFilterMilestone] = useState<string>("all");
 
   async function load() {
     setLoading(true);
@@ -148,20 +150,25 @@ export default function DashboardPage() {
     };
   });
 
-  // ── Chart 2: Activity timeline (last 8 weeks) ─────────────────────────────
+  // ── Chart 2: Activity timeline (filter-aware) ───────────────────────────────
   const now = new Date();
-  const weeklyData = Array.from({ length: 8 }, (_, i) => {
-    const weekStart = new Date(now);
-    weekStart.setDate(weekStart.getDate() - 7 * (7 - i));
-    weekStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const inRange = (ts: string) => { const d = new Date(ts); return d >= weekStart && d < weekEnd; };
+  const filteredActivity = filterMilestone === "all"
+    ? activityLogs
+    : activityLogs.filter((l) => l.milestone === filterMilestone);
+  const intervals = filterPeriod === "week" ? 7 : filterPeriod === "month" ? 4 : 8;
+  const intervalDays = filterPeriod === "week" ? 1 : 7;
+  const weeklyData = Array.from({ length: intervals }, (_, i) => {
+    const start = new Date(now);
+    start.setDate(start.getDate() - intervalDays * (intervals - 1 - i));
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + intervalDays);
+    const label = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const inRange = (ts: string) => { const d = new Date(ts); return d >= start && d < end; };
     return {
       week: label,
-      Submissions: activityLogs.filter((l) => l.type === "submitted" && inRange(l.timestamp)).length,
-      Approvals: activityLogs.filter((l) => l.type === "approved" && inRange(l.timestamp)).length,
+      Submissions: filteredActivity.filter((l) => l.type === "submitted" && inRange(l.timestamp)).length,
+      Approvals: filteredActivity.filter((l) => l.type === "approved" && inRange(l.timestamp)).length,
     };
   });
 
@@ -194,7 +201,6 @@ export default function DashboardPage() {
 
   // ── Chart 5: Per-member progress ──────────────────────────────────────────
   const memberData = users
-    .filter((u) => u.role === "member")
     .map((u) => {
       const total = tasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === u.id).length, 0);
       const done = tasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === u.id && isApproved(t.id, s)).length, 0);
@@ -214,6 +220,36 @@ export default function DashboardPage() {
   const pendingDeposits = deposits.filter((d) => d.status === "pending").reduce((s, d) => s + d.amount, 0);
   const hasFinanceData = financeData.some((d) => d.Approved > 0 || d.Pending > 0);
   const hasCumulative = cumulativeData.length > 1;
+
+  // ── Chart 7: Task completion: expected vs actual ─────────────────────────
+  const taskCompletionData = tasks
+    .filter((t) => t.dueDate && (filterMilestone === "all" || t.milestone === filterMilestone))
+    .map((t) => {
+      const created = new Date(t.createdAt).getTime();
+      const due = new Date(t.dueDate!).getTime();
+      const expectedDays = Math.max(1, Math.round((due - created) / (1000 * 60 * 60 * 24)));
+      const taskReviews = reviews.filter(
+        (r) => r.taskId === t.id && r.status === "approved" && r.reviewedAt
+      );
+      const lastApproval = taskReviews.reduce<string | null>((latest, r) => {
+        if (!latest) return r.reviewedAt;
+        return r.reviewedAt && new Date(r.reviewedAt) > new Date(latest) ? r.reviewedAt : latest;
+      }, null);
+      const actualDays = lastApproval
+        ? Math.max(1, Math.round((new Date(lastApproval).getTime() - created) / (1000 * 60 * 60 * 24)))
+        : null;
+      return {
+        name: t.title.length > 18 ? t.title.slice(0, 16) + "\u2026" : t.title,
+        fullTitle: t.title,
+        milestone: t.milestone,
+        Expected: expectedDays,
+        Actual: actualDays,
+        late: actualDays !== null && actualDays > expectedDays,
+        inProgress: actualDays === null,
+      };
+    })
+    .slice(0, 8);
+  const hasTaskCompletion = taskCompletionData.length > 0;
 
   return (
     <div className="space-y-5">
@@ -317,10 +353,34 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 p-6">
-          <div className="flex items-center gap-2 mb-5">
+          <div className="flex items-center gap-2 mb-3">
             <span className="w-1.5 h-5 bg-blue-500 rounded-full inline-block" />
             <h3 className="font-semibold text-gray-900">Activity Timeline</h3>
-            <span className="ml-auto text-xs text-gray-400">Last 8 weeks</span>
+            <span className="ml-auto text-xs text-gray-400">
+              {filterPeriod === "week" ? "Last 7 days" : filterPeriod === "month" ? "Last 4 weeks" : "Last 8 weeks"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+              {(["week", "month", "all"] as const).map((p) => (
+                <button key={p} onClick={() => setFilterPeriod(p)}
+                  className={`px-3 py-1.5 font-medium transition ${
+                    filterPeriod === p ? "bg-indigo-600 text-white" : "text-gray-500 hover:bg-gray-50"
+                  }`}>
+                  {p === "week" ? "7 Days" : p === "month" ? "Month" : "All Time"}
+                </button>
+              ))}
+            </div>
+            <select
+              value={filterMilestone}
+              onChange={(e) => setFilterMilestone(e.target.value)}
+              className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="all">All Milestones</option>
+              {milestones.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
           </div>
           {activityLogs.length === 0 ? (
             <div className="flex items-center justify-center h-52 text-gray-300">
@@ -500,6 +560,56 @@ export default function DashboardPage() {
           <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
             <span>{completedSubtasks < totalSubtasks ? `${totalSubtasks - completedSubtasks} subtasks remaining` : "All subtasks completed 🎉"}</span>
             <span className="font-medium text-indigo-600">{progress}% done</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Task Completion: Expected vs Actual ──────────────────────────────── */}
+      {hasTaskCompletion && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1.5 h-5 bg-rose-500 rounded-full inline-block" />
+            <h3 className="font-semibold text-gray-900">Task Completion: Expected vs Actual</h3>
+            <span className="ml-auto text-xs text-gray-400">Days from task creation to completion</span>
+          </div>
+          <p className="text-xs text-gray-400 mb-5 ml-4">
+            Light bar = allocated days &nbsp;·&nbsp; Green = on time &nbsp;·&nbsp; Red = late &nbsp;·&nbsp; No bar = in progress
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={taskCompletionData} barGap={6} barSize={16} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip
+                contentStyle={tooltipStyle}
+                formatter={(value, name) => [`${value} days`, name]}
+                labelFormatter={(label) => {
+                  const d = taskCompletionData.find((t) => t.name === label);
+                  return d?.fullTitle ?? label;
+                }}
+              />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="Expected" fill="#e0e7ff" radius={[4, 4, 0, 0]} name="Expected (days)" />
+              <Bar dataKey="Actual" radius={[4, 4, 0, 0]} name="Actual (days)">
+                {taskCompletionData.map((entry, i) => (
+                  <Cell key={i} fill={entry.inProgress ? "#d1d5db" : entry.late ? "#ef4444" : "#22c55e"} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-4 text-center text-xs">
+            <div>
+              <p className="font-semibold text-green-600 text-base">{taskCompletionData.filter((t) => !t.inProgress && !t.late).length}</p>
+              <p className="text-gray-400 mt-0.5">On Time</p>
+            </div>
+            <div>
+              <p className="font-semibold text-red-500 text-base">{taskCompletionData.filter((t) => t.late).length}</p>
+              <p className="text-gray-400 mt-0.5">Late</p>
+            </div>
+            <div>
+              <p className="font-semibold text-amber-500 text-base">{taskCompletionData.filter((t) => t.inProgress).length}</p>
+              <p className="text-gray-400 mt-0.5">In Progress</p>
+            </div>
           </div>
         </div>
       )}
