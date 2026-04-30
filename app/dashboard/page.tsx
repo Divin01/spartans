@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
@@ -39,6 +39,9 @@ import {
   RefreshCw,
   Users,
   Activity,
+  X,
+  Search,
+  ArrowUpDown,
 } from "lucide-react";
 
 // ── SVG Progress Ring ─────────────────────────────────────────────────────────
@@ -92,6 +95,11 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [filterPeriod, setFilterPeriod] = useState<"week" | "month" | "all">("all");
   const [filterMilestone, setFilterMilestone] = useState<string>("all");
+  const [showAllActivity, setShowAllActivity] = useState(false);
+  const [activitySearch, setActivitySearch] = useState("");
+  const [activityFilterType, setActivityFilterType] = useState<"all" | "submitted" | "approved">("all");
+  const [activityFilterMilestone, setActivityFilterMilestone] = useState("all");
+  const [activitySort, setActivitySort] = useState<"newest" | "oldest">("newest");
 
   async function load() {
     setLoading(true);
@@ -251,6 +259,27 @@ export default function DashboardPage() {
     .slice(0, 8);
   const hasTaskCompletion = taskCompletionData.length > 0;
 
+  // ── Filtered + sorted activity for modal ────────────────────────────────
+  const allActivityFiltered = activityLogs
+    .filter((l) => {
+      if (activityFilterType !== "all" && l.type !== activityFilterType) return false;
+      if (activityFilterMilestone !== "all" && l.milestone !== activityFilterMilestone) return false;
+      if (activitySearch.trim()) {
+        const q = activitySearch.toLowerCase();
+        if (
+          !l.userName.toLowerCase().includes(q) &&
+          !l.taskTitle.toLowerCase().includes(q) &&
+          !l.milestone.toLowerCase().includes(q) &&
+          !(l.reviewerName ?? "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const diff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+      return activitySort === "newest" ? -diff : diff;
+    });
+
   return (
     <div className="space-y-5">
 
@@ -295,61 +324,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── Row 1: Milestone bars + Overall donut ──────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 p-6">
-          <div className="flex items-center gap-2 mb-5">
-            <span className="w-1.5 h-5 bg-indigo-600 rounded-full inline-block" />
-            <h3 className="font-semibold text-gray-900">Progress by Milestone</h3>
-            <span className="ml-auto text-xs text-gray-400">{milestoneData.length} milestone{milestoneData.length !== 1 ? "s" : ""}</span>
-          </div>
-          {milestoneData.length === 0 ? (
-            <div className="flex items-center justify-center h-52 text-gray-300">
-              <div className="text-center"><ListTodo className="h-10 w-10 mx-auto mb-2 opacity-30" /><p className="text-sm">No milestone data yet</p></div>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={230}>
-              <BarChart data={milestoneData} barGap={6} barSize={18} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f9fafb", radius: 6 }} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Total" fill="#e0e7ff" radius={[4, 4, 0, 0]} name="Total Subtasks" />
-                <Bar dataKey="Approved" fill="#6366f1" radius={[4, 4, 0, 0]} name="Approved" />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="w-1.5 h-5 bg-green-500 rounded-full inline-block" />
-            <h3 className="font-semibold text-gray-900">Overall Progress</h3>
-          </div>
-          <div className="flex-1 flex flex-col items-center justify-center">
-            <ProgressRing pct={progress} size={148} />
-            <p className="text-xs text-gray-500 mt-3 text-center">{completedSubtasks} of {totalSubtasks} subtasks approved</p>
-          </div>
-          <div className="mt-5 space-y-2.5">
-            {milestoneData.slice(0, 4).map((m) => (
-              <div key={m.name}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-gray-500 truncate max-w-[65%]">{m.name}</span>
-                  <span className="text-xs font-semibold text-gray-700">{m.pct}%</span>
-                </div>
-                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${m.pct}%`, background: m.pct >= 75 ? "#22c55e" : m.pct >= 40 ? "#6366f1" : "#f59e0b" }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Row 2: Activity timeline + Review pie ──────────────────────────── */}
+      {/* ── Row 1: Activity timeline + Review pie ──────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
         <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 p-6">
@@ -457,6 +432,61 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* ── Row 2: Milestone bars + Overall donut ──────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-5">
+            <span className="w-1.5 h-5 bg-indigo-600 rounded-full inline-block" />
+            <h3 className="font-semibold text-gray-900">Progress by Milestone</h3>
+            <span className="ml-auto text-xs text-gray-400">{milestoneData.length} milestone{milestoneData.length !== 1 ? "s" : ""}</span>
+          </div>
+          {milestoneData.length === 0 ? (
+            <div className="flex items-center justify-center h-52 text-gray-300">
+              <div className="text-center"><ListTodo className="h-10 w-10 mx-auto mb-2 opacity-30" /><p className="text-sm">No milestone data yet</p></div>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={230}>
+              <BarChart data={milestoneData} barGap={6} barSize={18} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f9fafb", radius: 6 }} />
+                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Total" fill="#e0e7ff" radius={[4, 4, 0, 0]} name="Total Subtasks" />
+                <Bar dataKey="Approved" fill="#6366f1" radius={[4, 4, 0, 0]} name="Approved" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-1.5 h-5 bg-green-500 rounded-full inline-block" />
+            <h3 className="font-semibold text-gray-900">Overall Progress</h3>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <ProgressRing pct={progress} size={148} />
+            <p className="text-xs text-gray-500 mt-3 text-center">{completedSubtasks} of {totalSubtasks} subtasks approved</p>
+          </div>
+          <div className="mt-5 space-y-2.5">
+            {milestoneData.slice(0, 4).map((m) => (
+              <div key={m.name}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-gray-500 truncate max-w-[65%]">{m.name}</span>
+                  <span className="text-xs font-semibold text-gray-700">{m.pct}%</span>
+                </div>
+                <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${m.pct}%`, background: m.pct >= 75 ? "#22c55e" : m.pct >= 40 ? "#6366f1" : "#f59e0b" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+
       {/* ── Row 3: Member progress + Finance ───────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
@@ -533,37 +563,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Cumulative completion line chart ────────────────────────────────── */}
-      {hasCumulative && (
-        <div className="bg-white rounded-2xl border border-gray-200 p-6">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-1.5 h-5 bg-indigo-500 rounded-full inline-block" />
-            <h3 className="font-semibold text-gray-900">Cumulative Completion</h3>
-            <span className="ml-auto text-xs text-gray-400">Actual approvals vs project target</span>
-          </div>
-          <p className="text-xs text-gray-400 mb-5 ml-4">
-            Target line shows <span className="font-medium text-gray-600">{totalSubtasks} subtasks</span>
-          </p>
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={cumulativeData} margin={{ top: 0, right: 24, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, totalSubtasks > 0 ? totalSubtasks + 1 : 10]} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
-              <ReferenceLine y={totalSubtasks} stroke="#e5e7eb" strokeDasharray="6 3" strokeWidth={1.5}
-                label={{ value: "Target", position: "right", fontSize: 10, fill: "#9ca3af" }} />
-              <Line type="monotone" dataKey="Completed" stroke="#6366f1" strokeWidth={2.5} dot={false}
-                activeDot={{ r: 5, strokeWidth: 0 }} name="Approvals (cumulative)" />
-            </LineChart>
-          </ResponsiveContainer>
-          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
-            <span>{completedSubtasks < totalSubtasks ? `${totalSubtasks - completedSubtasks} subtasks remaining` : "All subtasks completed 🎉"}</span>
-            <span className="font-medium text-indigo-600">{progress}% done</span>
-          </div>
-        </div>
-      )}
-
       {/* ── Task Completion: Expected vs Actual ──────────────────────────────── */}
       {hasTaskCompletion && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
@@ -573,7 +572,7 @@ export default function DashboardPage() {
             <span className="ml-auto text-xs text-gray-400">Days from task creation to completion</span>
           </div>
           <p className="text-xs text-gray-400 mb-5 ml-4">
-            Light bar = allocated days &nbsp;·&nbsp; Green = on time &nbsp;·&nbsp; Red = late &nbsp;·&nbsp; No bar = in progress
+            Light bar = allocated days &nbsp;.&nbsp; Green = on time &nbsp;.&nbsp; Red = late &nbsp;.&nbsp; No bar = in progress
           </p>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={taskCompletionData} barGap={6} barSize={16} margin={{ top: 0, right: 0, left: -16, bottom: 0 }}>
@@ -614,12 +613,49 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ── Cumulative completion line chart ────────────────────────────────── */}
+      {hasCumulative && (
+        <div className="bg-white rounded-2xl border border-gray-200 p-6">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-1.5 h-5 bg-indigo-500 rounded-full inline-block" />
+            <h3 className="font-semibold text-gray-900">Cumulative Completion</h3>
+            <span className="ml-auto text-xs text-gray-400">Actual approvals vs project target</span>
+          </div>
+          <p className="text-xs text-gray-400 mb-5 ml-4">
+            Target line shows <span className="font-medium text-gray-600">{totalSubtasks} subtasks</span>
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={cumulativeData} margin={{ top: 0, right: 24, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11, fill: "#9ca3af" }} axisLine={false} tickLine={false} domain={[0, totalSubtasks > 0 ? totalSubtasks + 1 : 10]} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 12 }} />
+              <ReferenceLine y={totalSubtasks} stroke="#e5e7eb" strokeDasharray="6 3" strokeWidth={1.5}
+                label={{ value: "Target", position: "right", fontSize: 10, fill: "#9ca3af" }} />
+              <Line type="monotone" dataKey="Completed" stroke="#6366f1" strokeWidth={2.5} dot={false}
+                activeDot={{ r: 5, strokeWidth: 0 }} name="Approvals (cumulative)" />
+            </LineChart>
+          </ResponsiveContainer>
+          <div className="mt-4 pt-4 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+            <span>{completedSubtasks < totalSubtasks ? `${totalSubtasks - completedSubtasks} subtasks remaining` : "All subtasks completed!"}</span>
+            <span className="font-medium text-indigo-600">{progress}% done</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Recent Activity ─────────────────────────────────────────────────── */}
       <div className="bg-white rounded-2xl border border-gray-200 p-6">
         <div className="flex items-center gap-2 mb-5">
           <span className="w-1.5 h-5 bg-gray-400 rounded-full inline-block" />
           <h3 className="font-semibold text-gray-900">Recent Activity</h3>
-          <span className="ml-auto text-xs text-gray-400">{activityLogs.length} total events</span>
+          <span className="text-xs text-gray-400 ml-1">{activityLogs.length} total events</span>
+          <button
+            onClick={() => setShowAllActivity(true)}
+            className="ml-auto text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:underline transition"
+          >
+            View all
+          </button>
         </div>
         {activityLogs.length === 0 ? (
           <p className="text-sm text-gray-400">No activity yet.</p>
@@ -636,13 +672,13 @@ export default function DashboardPage() {
                   {log.type === "approved" ? (
                     <p className="text-gray-700 leading-snug">
                       <span className="font-medium">{log.userName}</span> completed{" "}
-                      <span className="font-medium text-gray-900">&ldquo;{log.taskTitle}&rdquo;</span>{" "}
-                      — approved by <span className="font-medium">{log.reviewerName}</span>
+                      <span className="font-medium text-gray-900">{log.taskTitle}</span>{" "}
+                      approved by <span className="font-medium">{log.reviewerName}</span>
                     </p>
                   ) : (
                     <p className="text-gray-700 leading-snug">
                       <span className="font-medium">{log.userName}</span> submitted{" "}
-                      <span className="font-medium text-gray-900">&ldquo;{log.taskTitle}&rdquo;</span>{" "}
+                      <span className="font-medium text-gray-900">{log.taskTitle}</span>{" "}
                       for review
                     </p>
                   )}
@@ -657,7 +693,137 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
+        {activityLogs.length > 8 && (
+          <button
+            onClick={() => setShowAllActivity(true)}
+            className="mt-4 w-full text-center text-xs text-indigo-600 font-medium hover:underline"
+          >
+            + {activityLogs.length - 8} more events - View all
+          </button>
+        )}
       </div>
+
+      {/* ── All Activity Modal ───────────────────────────────────────────────── */}
+      {showAllActivity && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAllActivity(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">All Activity</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{allActivityFiltered.length} events matching filters</p>
+              </div>
+              <button onClick={() => setShowAllActivity(false)} className="text-gray-400 hover:text-gray-600 transition">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="px-6 py-3 border-b border-gray-100 space-y-2.5">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search by name, task, milestone..."
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                />
+                {activitySearch && (
+                  <button onClick={() => setActivitySearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                  {(["all", "submitted", "approved"] as const).map((t) => (
+                    <button key={t} onClick={() => setActivityFilterType(t)}
+                      className={`px-3 py-1.5 font-medium transition ${
+                        activityFilterType === t ? "bg-indigo-600 text-white" : "text-gray-500 hover:bg-gray-50"
+                      }`}>
+                      {t === "all" ? "All" : t === "submitted" ? "Submissions" : "Approvals"}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={activityFilterMilestone}
+                  onChange={(e) => setActivityFilterMilestone(e.target.value)}
+                  className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                >
+                  <option value="all">All Milestones</option>
+                  {milestones.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <button
+                  onClick={() => setActivitySort(activitySort === "newest" ? "oldest" : "newest")}
+                  className="ml-auto flex items-center gap-1.5 text-xs font-medium text-gray-500 border border-gray-200 rounded-lg px-2.5 py-1.5 hover:bg-gray-50 transition"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                  {activitySort === "newest" ? "Newest first" : "Oldest first"}
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
+              {allActivityFiltered.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-300">
+                  <Activity className="h-10 w-10 mb-3 opacity-30" />
+                  <p className="text-sm">No events match your filters</p>
+                </div>
+              ) : (
+                allActivityFiltered.map((log) => (
+                  <div key={log.id} className="flex items-start gap-3 text-sm py-2 border-b border-gray-50 last:border-0">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${log.type === "approved" ? "bg-green-100" : "bg-amber-100"}`}>
+                      {log.type === "approved"
+                        ? <CheckCircle2 className="h-3.5 w-3.5 text-green-600" />
+                        : <Clock className="h-3.5 w-3.5 text-amber-600" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {log.type === "approved" ? (
+                        <p className="text-gray-700 leading-snug">
+                          <span className="font-medium">{log.userName}</span> completed{" "}
+                          <span className="font-medium text-gray-900">{log.taskTitle}</span>{" "}
+                          approved by <span className="font-medium">{log.reviewerName}</span>
+                        </p>
+                      ) : (
+                        <p className="text-gray-700 leading-snug">
+                          <span className="font-medium">{log.userName}</span> submitted{" "}
+                          <span className="font-medium text-gray-900">{log.taskTitle}</span>{" "}
+                          for review
+                        </p>
+                      )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="text-xs text-gray-400">{log.milestone}</span>
+                        <span className="text-gray-300">·</span>
+                        <span className="text-xs text-gray-400">
+                          {new Date(log.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                          {" at "}
+                          {new Date(log.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                        </span>
+                        <span className={`ml-auto text-xs font-medium px-2 py-0.5 rounded-full ${
+                          log.type === "approved" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"
+                        }`}>
+                          {log.type === "approved" ? "Approved" : "Submitted"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+              <span>Showing {allActivityFiltered.length} of {activityLogs.length} events</span>
+              <button onClick={() => { setActivitySearch(""); setActivityFilterType("all"); setActivityFilterMilestone("all"); setActivitySort("newest"); }}
+                className="text-indigo-600 font-medium hover:underline">
+                Clear filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
