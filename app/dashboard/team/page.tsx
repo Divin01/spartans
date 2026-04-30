@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { getUsers, getTasks, getReviews, createUser } from "@/lib/firestore";
-import type { User, Task, Review } from "@/lib/types";
+import { getUsers, getTasks, getReviews, createUser, getCashier, setCashier } from "@/lib/firestore";
+import type { User, Task, Review, CashierSetting } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Loader2,
@@ -14,6 +14,7 @@ import {
   ChevronDown,
   X,
   Plus,
+  Wallet,
 } from "lucide-react";
 
 export default function TeamPage() {
@@ -25,14 +26,19 @@ export default function TeamPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
   const [showAddUser, setShowAddUser] = useState(false);
+  const [cashier, setCashierState] = useState<CashierSetting | null>(null);
+  const [showAssignCashier, setShowAssignCashier] = useState(false);
+  const [assigningCashier, setAssigningCashier] = useState(false);
+  const [selectedCashierId, setSelectedCashierId] = useState("");
 
   const isManager = user?.role === "manager";
 
   async function load() {
-    const [u, t, r] = await Promise.all([getUsers(), getTasks(), getReviews()]);
+    const [u, t, r, c] = await Promise.all([getUsers(), getTasks(), getReviews(), getCashier()]);
     setUsers(u);
     setTasks(t);
     setReviews(r);
+    setCashierState(c);
     setLoading(false);
   }
 
@@ -81,23 +87,47 @@ export default function TeamPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Team</h1>
           <p className="text-gray-500 text-sm mt-1">
             {users.length} member{users.length !== 1 && "s"}
           </p>
         </div>
-        {isManager && (
-          <button
-            onClick={() => setShowAddUser(true)}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            Add User
-          </button>
-        )}
+        <div className="flex gap-2 shrink-0">
+          {isManager && (
+            <button
+              onClick={() => { setSelectedCashierId(cashier?.userId ?? ""); setShowAssignCashier(true); }}
+              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition shadow-sm"
+            >
+              <Wallet className="h-4 w-4" />
+              {cashier ? "Change Cashier" : "Assign Cashier"}
+            </button>
+          )}
+          {isManager && (
+            <button
+              onClick={() => setShowAddUser(true)}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition shadow-sm"
+            >
+              <Plus className="h-4 w-4" />
+              Add User
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Cashier info strip */}
+      {cashier && (
+        <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm">
+          <Wallet className="h-4 w-4 text-indigo-600 shrink-0" />
+          <span className="text-indigo-700">
+            Finance Cashier: <strong>{cashier.userName}</strong>
+          </span>
+          <span className="ml-auto text-xs text-indigo-400">
+            Assigned by {cashier.assignedBy}
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {users.map((u) => {
@@ -397,6 +427,86 @@ export default function TeamPage() {
             await load();
           }}
         />
+      )}
+
+      {/* Assign Cashier Modal */}
+      {showAssignCashier && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setShowAssignCashier(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Assign Cashier</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Select the finance cashier for the project</p>
+              </div>
+              <button onClick={() => setShowAssignCashier(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-3">
+              {users.map((u) => (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => setSelectedCashierId(u.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition text-left ${
+                    selectedCashierId === u.id
+                      ? "border-indigo-400 bg-indigo-50"
+                      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">
+                    {u.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{u.name}</p>
+                    <p className="text-xs text-gray-400 truncate">{u.email}</p>
+                  </div>
+                  {selectedCashierId === u.id && (
+                    <CheckCircle2 className="h-4 w-4 text-indigo-600 shrink-0 ml-auto" />
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAssignCashier(false)}
+                className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedCashierId || assigningCashier}
+                onClick={async () => {
+                  const selected = users.find((u) => u.id === selectedCashierId);
+                  if (!selected || !user) return;
+                  setAssigningCashier(true);
+                  await setCashier({
+                    userId: selected.id,
+                    userName: selected.name,
+                    userEmail: selected.email,
+                    assignedBy: user.name,
+                    assignedAt: new Date().toISOString(),
+                  });
+                  setAssigningCashier(false);
+                  setShowAssignCashier(false);
+                  await load();
+                }}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition flex items-center gap-2"
+              >
+                {assigningCashier && <Loader2 className="h-4 w-4 animate-spin" />}
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

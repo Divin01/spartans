@@ -16,6 +16,7 @@ import {
   ScrollText,
   AlertCircle,
   BookOpen,
+  Wallet,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
 import { getReviews, getTasks, getReadTaskIds } from "@/lib/firestore";
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/policy", label: "Group Rules & Policy", icon: BookOpen },
+  { href: "/dashboard/finance", label: "Finance & Budget", icon: Wallet },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 

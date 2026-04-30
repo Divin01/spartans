@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog, Review, ActivityLog } from "./types";
+import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -220,4 +220,37 @@ export async function getReadTaskIds(userId: string): Promise<string[]> {
   const snap = await getDoc(ref);
   if (!snap.exists()) return [];
   return (snap.data().readTaskIds as string[]) ?? [];
+}
+
+// ── Cashier Setting ─────────────────────────────────────
+export async function getCashier(): Promise<CashierSetting | null> {
+  const snap = await getDoc(doc(db, "settings", "cashier"));
+  if (!snap.exists()) return null;
+  return snap.data() as CashierSetting;
+}
+
+export async function setCashier(cashier: CashierSetting): Promise<void> {
+  await setDoc(doc(db, "settings", "cashier"), cashier);
+}
+
+// ── Deposits ────────────────────────────────────────────
+export async function getDeposits(): Promise<Deposit[]> {
+  const snap = await getDocs(
+    query(collection(db, "deposits"), orderBy("submittedAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Deposit));
+}
+
+export async function createDeposit(
+  deposit: Omit<Deposit, "id">
+): Promise<string> {
+  const ref = await addDoc(collection(db, "deposits"), deposit);
+  return ref.id;
+}
+
+export async function updateDeposit(
+  id: string,
+  data: Partial<Deposit>
+): Promise<void> {
+  await updateDoc(doc(db, "deposits", id), data as Record<string, unknown>);
 }

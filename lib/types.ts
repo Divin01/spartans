@@ -64,3 +64,27 @@ export interface ActivityLog {
   reviewerName: string;
   timestamp: string;
 }
+
+export interface Deposit {
+  id: string;
+  userId: string;
+  userName: string;
+  amount: number;
+  description: string;
+  documentName: string;
+  documentPath: string;
+  status: "pending" | "approved" | "declined";
+  cashierId: string | null;
+  cashierName: string | null;
+  comment: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+}
+
+export interface CashierSetting {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  assignedBy: string;
+  assignedAt: string;
+}
