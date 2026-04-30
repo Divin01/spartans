@@ -88,3 +88,9 @@ export interface CashierSetting {
   assignedBy: string;
   assignedAt: string;
 }
+
+export interface BankingDetails {
+  accountHolder: string;
+  accountNumber: string;
+  bankName: string;
+}

@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting } from "./types";
+import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -231,6 +231,23 @@ export async function getCashier(): Promise<CashierSetting | null> {
 
 export async function setCashier(cashier: CashierSetting): Promise<void> {
   await setDoc(doc(db, "settings", "cashier"), cashier);
+}
+
+// ── Banking Details ─────────────────────────────────────
+const DEFAULT_BANKING: BankingDetails = {
+  accountHolder: "Natalie Khensani Mashele",
+  accountNumber: "1308531273",
+  bankName: "Nedbank",
+};
+
+export async function getBankingDetails(): Promise<BankingDetails> {
+  const snap = await getDoc(doc(db, "settings", "bankingDetails"));
+  if (!snap.exists()) return DEFAULT_BANKING;
+  return snap.data() as BankingDetails;
+}
+
+export async function setBankingDetails(details: BankingDetails): Promise<void> {
+  await setDoc(doc(db, "settings", "bankingDetails"), details);
 }
 
 // ── Deposits ────────────────────────────────────────────

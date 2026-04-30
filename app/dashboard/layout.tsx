@@ -19,7 +19,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useState, useEffect, type ReactNode } from "react";
-import { getReviews, getTasks, getReadTaskIds } from "@/lib/firestore";
+import { getReviews, getTasks, getReadTaskIds, getDeposits, getCashier } from "@/lib/firestore";
 import type { Review } from "@/lib/types";
 
 const navItems = [
@@ -27,9 +27,9 @@ const navItems = [
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
   { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
+  { href: "/dashboard/finance", label: "Finance & Budget", icon: Wallet },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/policy", label: "Group Rules & Policy", icon: BookOpen },
-  { href: "/dashboard/finance", label: "Finance & Budget", icon: Wallet },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
 
@@ -40,6 +40,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [reviewBadge, setReviewBadge] = useState(0);
   const [taskBadge, setTaskBadge] = useState(0);
+  const [financeBadge, setFinanceBadge] = useState(0);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");
@@ -69,6 +70,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         setTaskBadge(unreadCount);
       }
     );
+    // Finance badge: show pending deposits count to the cashier only
+    Promise.all([getDeposits(), getCashier()]).then(([deps, cashier]) => {
+      if (cashier && cashier.userId === user.id) {
+        setFinanceBadge(deps.filter((d) => d.status === "pending").length);
+      } else {
+        setFinanceBadge(0);
+      }
+    });
   }, [user, pathname]);
 
   if (loading || !user) return null;
@@ -131,6 +140,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 {href === "/dashboard/issues" && reviewBadge > 0 && (
                   <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
                     {reviewBadge}
+                  </span>
+                )}
+                {href === "/dashboard/finance" && financeBadge > 0 && (
+                  <span className="ml-auto w-5 h-5 bg-orange-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                    {financeBadge}
                   </span>
                 )}
               </Link>
