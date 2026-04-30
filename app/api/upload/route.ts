@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { v2 as cloudinary } from "cloudinary";
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -10,7 +15,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No file provided" }, { status: 400 });
   }
 
-  // Validate: only allow common document types
+  // Allow common document and image types
   const allowed = [
     "application/pdf",
     "image/jpeg",
@@ -37,13 +42,27 @@ export async function POST(req: NextRequest) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  // Build a safe filename: timestamp + original name (sanitised)
-  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const fileName = `${Date.now()}_${safeName}`;
+  // Upload to Cloudinary as a raw file (preserves PDFs, docs, etc.)
+  const result = await new Promise<{ secure_url: string; public_id: string }>(
+    (resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "spartans/deposits",
+          resource_type: "auto",
+          use_filename: true,
+          unique_filename: true,
+        },
+        (error, result) => {
+          if (error || !result) return reject(error ?? new Error("Upload failed"));
+          resolve(result as { secure_url: string; public_id: string });
+        }
+      );
+      stream.end(buffer);
+    }
+  );
 
-  const uploadsDir = join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDir, { recursive: true });
-  await writeFile(join(uploadsDir, fileName), buffer);
-
-  return NextResponse.json({ path: `/uploads/${fileName}`, name: file.name });
+  return NextResponse.json({
+    path: result.secure_url,
+    name: file.name,
+  });
 }
