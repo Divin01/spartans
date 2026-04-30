@@ -9,6 +9,7 @@ import {
   getCashier,
   getBankingDetails,
   setBankingDetails,
+  setCashierPasskey,
 } from "@/lib/firestore";
 import type { Deposit, CashierSetting, BankingDetails } from "@/lib/types";
 import {
@@ -28,6 +29,7 @@ import {
   Pencil,
   CreditCard,
   Building2,
+  KeyRound,
 } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────
@@ -367,6 +369,94 @@ function ReviewModal({
   );
 }
 
+// ── Change Passkey Modal (cashier only) ──────────────────────────────────────
+function ChangePasskeyModal({
+  onClose,
+  onSave,
+}: {
+  onClose: () => void;
+  onSave: (key: string) => Promise<void>;
+}) {
+  const [newKey, setNewKey] = useState("");
+  const [confirmKey, setConfirmKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (newKey.length < 6) { setError("Passkey must be at least 6 characters."); return; }
+    if (newKey !== confirmKey) { setError("Passkeys do not match."); return; }
+    setSaving(true);
+    await onSave(newKey);
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
+      <form
+        onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Change Passkey</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Update your cashier login passkey</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">New Passkey</label>
+            <input
+              type="password"
+              value={newKey}
+              onChange={(e) => setNewKey(e.target.value)}
+              placeholder="Min. 6 characters"
+              autoFocus
+              required
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Confirm Passkey</label>
+            <input
+              type="password"
+              value={confirmKey}
+              onChange={(e) => setConfirmKey(e.target.value)}
+              onPaste={(e) => e.preventDefault()}
+              placeholder="Re-enter new passkey"
+              required
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+          </div>
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>
+          )}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-100 transition">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-5 py-2.5 rounded-xl text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 transition flex items-center gap-2"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save Passkey
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ── Edit Banking Details Modal ──────────────────────────────
 function EditBankingModal({
   current,
@@ -590,6 +680,7 @@ export default function FinancePage() {
   const [tab, setTab] = useState<"deposits" | "breakdown">("deposits");
   const [showNew, setShowNew] = useState(false);
   const [showEditBanking, setShowEditBanking] = useState(false);
+  const [showChangePasskey, setShowChangePasskey] = useState(false);
   const [reviewDeposit, setReviewDeposit] = useState<Deposit | null>(null);
   const [filterUser, setFilterUser] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -678,8 +769,18 @@ export default function FinancePage() {
               </span>
             )}
           </span>
+          {isCashier && (
+            <button
+              onClick={() => setShowChangePasskey(true)}
+              title="Change your login passkey"
+              className="ml-auto flex items-center gap-1.5 text-xs font-medium text-indigo-500 hover:text-indigo-700 transition"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              Change Passkey
+            </button>
+          )}
           {isCashier && pendingCashierReview.length > 0 && (
-            <span className="ml-auto text-xs font-semibold bg-amber-500 text-white px-2.5 py-1 rounded-full">
+            <span className={`${!isCashier ? "ml-auto" : ""} text-xs font-semibold bg-amber-500 text-white px-2.5 py-1 rounded-full`}>
               {pendingCashierReview.length} pending review{pendingCashierReview.length > 1 ? "s" : ""}
             </span>
           )}
@@ -926,6 +1027,16 @@ export default function FinancePage() {
           current={banking}
           onClose={() => setShowEditBanking(false)}
           onSave={saveBanking}
+        />
+      )}
+
+      {showChangePasskey && (
+        <ChangePasskeyModal
+          onClose={() => setShowChangePasskey(false)}
+          onSave={async (key) => {
+            await setCashierPasskey(key);
+            setShowChangePasskey(false);
+          }}
         />
       )}
     </div>

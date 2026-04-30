@@ -131,6 +131,17 @@ export async function getManagerPasskey(): Promise<string | null> {
   return (snap.data().key as string) ?? null;
 }
 
+// ── Cashier Passkey ─────────────────────────────────────
+export async function getCashierPasskey(): Promise<string | null> {
+  const snap = await getDoc(doc(db, "settings", "cashierPasskey"));
+  if (!snap.exists()) return null;
+  return (snap.data().key as string) ?? null;
+}
+
+export async function setCashierPasskey(key: string): Promise<void> {
+  await setDoc(doc(db, "settings", "cashierPasskey"), { key });
+}
+
 // ── Reviews ─────────────────────────────────────────────
 export async function getReviews(): Promise<Review[]> {
   const snap = await getDocs(

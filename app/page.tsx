@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { getUserByEmail, logLogin, getManagerPasskey } from "@/lib/firestore";
+import { getUserByEmail, logLogin, getManagerPasskey, getCashier, getCashierPasskey } from "@/lib/firestore";
 import { Shield, LogIn, Loader2, Lock, ArrowLeft } from "lucide-react";
 import type { User } from "@/lib/types";
 
@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingManager, setPendingManager] = useState<User | null>(null);
+  const [pendingCashier, setPendingCashier] = useState<User | null>(null);
   const [passkey, setPasskey] = useState("");
   const { login, user, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -47,6 +48,16 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
+      // Check if this user is the current cashier
+      const cashierSetting = await getCashier();
+      if (cashierSetting && cashierSetting.userId === found.id) {
+        const cashierKey = await getCashierPasskey();
+        if (cashierKey) {
+          setPendingCashier(found);
+          setLoading(false);
+          return;
+        }
+      }
       login(found);
       logLogin(found);
       router.push("/dashboard");
@@ -77,6 +88,27 @@ export default function LoginPage() {
     }
   }
 
+  async function handleCashierPasskey(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const storedKey = await getCashierPasskey();
+      if (!storedKey || passkey !== storedKey) {
+        setError("Invalid passkey. Access denied.");
+        setLoading(false);
+        return;
+      }
+      login(pendingCashier!);
+      logLogin(pendingCashier!);
+      router.push("/dashboard");
+    } catch {
+      setError("Something went wrong. Please try again.");
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="flex flex-1 items-center justify-center px-4">
       <div className="w-full max-w-md">
@@ -89,10 +121,10 @@ export default function LoginPage() {
         </div>
 
         <form
-          onSubmit={pendingManager ? handlePasskey : handleSubmit}
+          onSubmit={pendingManager ? handlePasskey : pendingCashier ? handleCashierPasskey : handleSubmit}
           className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8 space-y-6"
         >
-          {!pendingManager ? (
+          {!pendingManager && !pendingCashier ? (
             <div>
               <label
                 htmlFor="email"
@@ -110,7 +142,7 @@ export default function LoginPage() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
               />
             </div>
-          ) : (
+          ) : pendingManager ? (
             <div className="space-y-4">
               <div className="flex items-center gap-3 bg-indigo-50 rounded-lg p-3">
                 <Lock className="h-5 w-5 text-indigo-600 shrink-0" />
@@ -138,6 +170,34 @@ export default function LoginPage() {
                 />
               </div>
             </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 bg-amber-50 rounded-lg p-3">
+                <Lock className="h-5 w-5 text-amber-600 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-medium text-amber-900">Cashier verification required</p>
+                  <p className="text-amber-700 mt-0.5">Enter your passkey to continue as <span className="font-medium">{pendingCashier!.name}</span></p>
+                </div>
+              </div>
+              <div>
+                <label
+                  htmlFor="passkey"
+                  className="block text-sm font-medium text-gray-700 mb-1.5"
+                >
+                  Passkey
+                </label>
+                <input
+                  id="passkey"
+                  type="password"
+                  required
+                  value={passkey}
+                  onChange={(e) => setPasskey(e.target.value)}
+                  placeholder="Enter cashier passkey"
+                  className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
+                  autoFocus
+                />
+              </div>
+            </div>
           )}
 
           {error && (
@@ -153,19 +213,20 @@ export default function LoginPage() {
           >
             {loading ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : pendingManager ? (
+            ) : pendingManager || pendingCashier ? (
               <Lock className="h-4 w-4" />
             ) : (
               <LogIn className="h-4 w-4" />
             )}
-            {pendingManager ? "Verify & Sign In" : "Sign In"}
+            {pendingManager || pendingCashier ? "Verify & Sign In" : "Sign In"}
           </button>
 
-          {pendingManager && (
+          {(pendingManager || pendingCashier) && (
             <button
               type="button"
               onClick={() => {
                 setPendingManager(null);
+                setPendingCashier(null);
                 setPasskey("");
                 setError("");
               }}
