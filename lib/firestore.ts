@@ -264,10 +264,15 @@ export async function setBankingDetails(details: BankingDetails): Promise<void> 
 
 // ── Deposits ────────────────────────────────────────────
 export async function getDeposits(): Promise<Deposit[]> {
-  const snap = await getDocs(
-    query(collection(db, "deposits"), orderBy("submittedAt", "desc"))
-  );
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Deposit));
+  // No orderBy — avoids Firestore index dependency; caller sorts client-side.
+  const snap = await getDocs(collection(db, "deposits"));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Deposit));
+  // Sort by submittedAt descending (gracefully handles missing field)
+  return docs.sort((a, b) => {
+    const ta = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+    const tb = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
+    return tb - ta;
+  });
 }
 
 export async function createDeposit(
@@ -281,5 +286,14 @@ export async function updateDeposit(
   id: string,
   data: Partial<Deposit>
 ): Promise<void> {
-  await updateDoc(doc(db, "deposits", id), data as Record<string, unknown>);
+  // Strip undefined values — Firestore updateDoc throws if any value is undefined.
+  // null is intentional (clears a field); undefined means "field was missing in source doc".
+  const clean = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  );
+  await updateDoc(doc(db, "deposits", id), clean);
+}
+
+export async function deleteDeposit(id: string): Promise<void> {
+  await deleteDoc(doc(db, "deposits", id));
 }

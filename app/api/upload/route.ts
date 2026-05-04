@@ -42,27 +42,31 @@ export async function POST(req: NextRequest) {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  // Upload to Cloudinary as a raw file (preserves PDFs, docs, etc.)
-  const result = await new Promise<{ secure_url: string; public_id: string }>(
-    (resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          folder: "spartans/deposits",
-          resource_type: "auto",
-          use_filename: true,
-          unique_filename: true,
-        },
-        (error, result) => {
-          if (error || !result) return reject(error ?? new Error("Upload failed"));
-          resolve(result as { secure_url: string; public_id: string });
-        }
-      );
-      stream.end(buffer);
-    }
-  );
+  try {
+    const result = await new Promise<{ secure_url: string; public_id: string }>(
+      (resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: "spartans/deposits",
+            resource_type: "auto",
+            use_filename: true,
+            unique_filename: true,
+          },
+          (error, result) => {
+            if (error || !result) return reject(error ?? new Error("Upload failed"));
+            resolve(result as { secure_url: string; public_id: string });
+          }
+        );
+        stream.end(buffer);
+      }
+    );
 
-  return NextResponse.json({
-    path: result.secure_url,
-    name: file.name,
-  });
+    return NextResponse.json({
+      path: result.secure_url,
+      name: file.name,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Upload failed";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }

@@ -70,15 +70,15 @@ export interface Deposit {
   userId: string;
   userName: string;
   amount: number;
-  description: string;
-  documentName: string;
-  documentPath: string;
+  description?: string | null;
+  documentName?: string | null;
+  documentPath?: string | null;
   status: "pending" | "approved" | "declined";
-  cashierId: string | null;
-  cashierName: string | null;
-  comment: string | null;
-  submittedAt: string;
-  reviewedAt: string | null;
+  cashierId?: string | null;
+  cashierName?: string | null;
+  comment?: string | null;
+  submittedAt?: string | null;
+  reviewedAt?: string | null;
 }
 
 export interface CashierSetting {

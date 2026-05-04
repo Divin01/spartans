@@ -6,6 +6,7 @@ import {
   getDeposits,
   createDeposit,
   updateDeposit,
+  deleteDeposit,
   getCashier,
   getBankingDetails,
   setBankingDetails,
@@ -27,6 +28,7 @@ import {
   MessageSquare,
   ExternalLink,
   Pencil,
+  Trash2,
   CreditCard,
   Building2,
   KeyRound,
@@ -261,18 +263,25 @@ function ReviewModal({
 }) {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+  const [reviewError, setReviewError] = useState("");
 
   async function decide(status: "approved" | "declined") {
     if (status === "declined" && !comment.trim()) return;
+    setReviewError("");
     setSaving(true);
-    await updateDeposit(deposit.id, {
-      status,
-      cashierId,
-      cashierName,
-      comment: comment.trim() || null,
-      reviewedAt: new Date().toISOString(),
-    });
-    onDone();
+    try {
+      await updateDeposit(deposit.id, {
+        status,
+        cashierId,
+        cashierName,
+        comment: comment.trim() || null,
+        reviewedAt: new Date().toISOString(),
+      });
+      onDone();
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : "Failed to save review. Please try again.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -310,24 +319,33 @@ function ReviewModal({
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-500">Submitted</span>
               <span className="text-sm text-gray-600">
-                {new Date(deposit.submittedAt).toLocaleDateString("en-ZA", {
-                  day: "numeric", month: "short", year: "numeric",
-                })}
+                {deposit.submittedAt
+                  ? new Date(deposit.submittedAt).toLocaleDateString("en-ZA", {
+                      day: "numeric", month: "short", year: "numeric",
+                    })
+                  : "—"}
               </span>
             </div>
           </div>
 
           {/* Proof of payment */}
-          <a
-            href={deposit.documentPath}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:border-indigo-300 transition"
-          >
-            <FileText className="h-4 w-4 text-indigo-600 shrink-0" />
-            <span className="text-sm text-indigo-700 truncate flex-1">{deposit.documentName}</span>
-            <ExternalLink className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
-          </a>
+          {deposit.documentPath ? (
+            <a
+              href={deposit.documentPath}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:border-indigo-300 transition"
+            >
+              <FileText className="h-4 w-4 text-indigo-600 shrink-0" />
+              <span className="text-sm text-indigo-700 truncate flex-1">{deposit.documentName || "View document"}</span>
+              <ExternalLink className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+            </a>
+          ) : (
+            <div className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl">
+              <FileText className="h-4 w-4 text-gray-400 shrink-0" />
+              <span className="text-sm text-gray-400">No document attached</span>
+            </div>
+          )}
 
           {/* Comment */}
           <div>
@@ -342,6 +360,9 @@ function ReviewModal({
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
             />
           </div>
+          {reviewError && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{reviewError}</p>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
@@ -564,13 +585,33 @@ function EditBankingModal({
 function DepositCard({
   deposit,
   isCashier,
+  currentUserId,
   onReview,
+  onDelete,
 }: {
   deposit: Deposit;
   isCashier: boolean;
+  currentUserId?: string;
   onReview: (d: Deposit) => void;
+  onDelete: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const canDelete =
+    deposit.status === "pending" && deposit.userId === currentUserId;
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteDeposit(deposit.id);
+      onDelete(deposit.id);
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
 
   return (
     <div
@@ -603,13 +644,51 @@ function DepositCard({
             <p className="text-lg font-bold text-gray-900">{fmt(deposit.amount)}</p>
             <p className="text-xs text-gray-400 mt-0.5">
               {deposit.userName} ·{" "}
-              {new Date(deposit.submittedAt).toLocaleDateString("en-ZA", {
-                day: "numeric", month: "short", year: "numeric",
-              })}
+              {deposit.submittedAt
+                ? new Date(deposit.submittedAt).toLocaleDateString("en-ZA", {
+                    day: "numeric", month: "short", year: "numeric",
+                  })
+                : "—"}
             </p>
           </div>
-          <StatusBadge status={deposit.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={deposit.status} />
+            {canDelete && !confirmDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                title="Delete deposit"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Inline delete confirmation */}
+        {confirmDelete && (
+          <div className="flex items-center justify-between gap-2 p-2.5 bg-red-50 border border-red-100 rounded-xl">
+            <span className="text-xs text-red-700 font-medium">Delete this deposit?</span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        )}
 
         {deposit.description && (
           <p className="text-sm text-gray-500">{deposit.description}</p>
@@ -629,16 +708,23 @@ function DepositCard({
 
         {expanded && (
           <div className="mt-3 space-y-3">
-            <a
-              href={deposit.documentPath}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2.5 p-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition"
-            >
-              <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
-              <span className="text-xs text-indigo-600 truncate flex-1">{deposit.documentName}</span>
-              <ExternalLink className="h-3 w-3 text-gray-400 shrink-0" />
-            </a>
+            {deposit.documentPath ? (
+              <a
+                href={deposit.documentPath!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2.5 p-2.5 bg-gray-50 border border-gray-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50 transition"
+              >
+                <FileText className="h-4 w-4 text-indigo-500 shrink-0" />
+                <span className="text-xs text-indigo-600 truncate flex-1">{deposit.documentName || "View document"}</span>
+                <ExternalLink className="h-3 w-3 text-gray-400 shrink-0" />
+              </a>
+            ) : (
+              <div className="flex items-center gap-2.5 p-2.5 bg-gray-50 border border-gray-200 rounded-lg">
+                <FileText className="h-4 w-4 text-gray-400 shrink-0" />
+                <span className="text-xs text-gray-400">No document attached</span>
+              </div>
+            )}
             {deposit.cashierName && (
               <p className="text-xs text-gray-400">
                 {deposit.status === "approved" ? "Approved" : "Reviewed"} by {deposit.cashierName}
@@ -694,11 +780,16 @@ export default function FinancePage() {
   }
 
   async function load() {
-    const [deps, cas, bank] = await Promise.all([getDeposits(), getCashier(), getBankingDetails()]);
-    setDeposits(deps);
-    setCashierState(cas);
-    setBanking(bank);
-    setLoading(false);
+    try {
+      const [deps, cas, bank] = await Promise.all([getDeposits(), getCashier(), getBankingDetails()]);
+      setDeposits(deps);
+      setCashierState(cas);
+      setBanking(bank);
+    } catch (err) {
+      console.error("Failed to load finance data:", err);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { load(); }, []);
@@ -913,7 +1004,9 @@ export default function FinancePage() {
                     key={d.id}
                     deposit={d}
                     isCashier={isCashier}
+                    currentUserId={user?.id}
                     onReview={setReviewDeposit}
+                    onDelete={(id) => setDeposits((prev) => prev.filter((x) => x.id !== id))}
                   />
                 ))}
               </div>
@@ -1012,13 +1105,13 @@ export default function FinancePage() {
         />
       )}
 
-      {reviewDeposit && cashier && (
+      {reviewDeposit && cashier && user && (
         <ReviewModal
           deposit={reviewDeposit}
           onClose={() => setReviewDeposit(null)}
           onDone={async () => { setReviewDeposit(null); await load(); }}
-          cashierName={cashier.userName}
-          cashierId={cashier.userId}
+          cashierName={user.name}
+          cashierId={user.id}
         />
       )}
 
