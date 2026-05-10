@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails } from "./types";
+import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails, ProjectConfig } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -296,4 +296,17 @@ export async function updateDeposit(
 
 export async function deleteDeposit(id: string): Promise<void> {
   await deleteDoc(doc(db, "deposits", id));
+}
+
+// ── Project Config (Timeline / Burndown) ───────────────────────
+const PROJECT_CONFIG_DOC = doc(db, "settings", "projectConfig");
+
+export async function getProjectConfig(): Promise<ProjectConfig | null> {
+  const snap = await getDoc(PROJECT_CONFIG_DOC);
+  if (!snap.exists()) return null;
+  return snap.data() as ProjectConfig;
+}
+
+export async function saveProjectConfig(config: ProjectConfig): Promise<void> {
+  await setDoc(PROJECT_CONFIG_DOC, config);
 }

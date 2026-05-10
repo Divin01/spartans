@@ -94,3 +94,36 @@ export interface BankingDetails {
   accountNumber: string;
   bankName: string;
 }
+
+// ── Project / Timeline ───────────────────────────────────
+export interface PhaseTask {
+  id: string;          // e.g. "4.1"
+  title: string;
+  start: string;       // ISO date string
+  end: string;         // ISO date string
+  owners: string[];
+}
+
+export interface Phase {
+  id: string;          // e.g. "4"
+  title: string;       // e.g. "Phase 4: Platform Development"
+  start: string;
+  end: string;
+  tasks: PhaseTask[];
+}
+
+export interface KeyMilestone {
+  title: string;
+  date: string;        // ISO date string (YYYY-MM-DD)
+  status: "done" | "active" | "upcoming" | "target";
+}
+
+export interface ProjectConfig {
+  projectStart: string;   // ISO date — fixed project start
+  projectEnd: string;     // ISO date — investor pitch / final target
+  totalPlannedTasks: number; // total subtasks at project start
+  phases: Phase[];
+  keyMilestones: KeyMilestone[];
+  updatedAt: string;
+  updatedBy: string;
+}
