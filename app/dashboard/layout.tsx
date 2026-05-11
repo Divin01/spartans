@@ -26,9 +26,9 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListTodo },
   { href: "/dashboard/issues", label: "Issues", icon: AlertCircle },
-  { href: "/dashboard/timeline", label: "Timeline", icon: CalendarDays },
-  { href: "/dashboard/finance", label: "Finance & Budget", icon: Wallet },
+  { href: "/dashboard/timeline", label: "Timeline & Analytics", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
+  { href: "/dashboard/finance", label: "Finance & Budget", icon: Wallet },
   { href: "/dashboard/policy", label: "Group Rules & Policy", icon: BookOpen },
   { href: "/dashboard/logs", label: "Logs", icon: ScrollText, managerOnly: true },
 ];
