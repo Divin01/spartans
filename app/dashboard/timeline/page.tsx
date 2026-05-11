@@ -393,7 +393,48 @@ export default function TimelinePage() {
   const totalDays = daysBetween(config.projectStart, config.projectEnd);
   const timeElapsedPct = Math.min(100, Math.round((daysElapsed / totalDays) * 100));
   const daysLeft = Math.max(0, daysBetween(today, config.projectEnd));
-  const onTrack = overallPct >= timeElapsedPct;
+
+  // Schedule-based overall progress: for every planned phase task, calculate
+  // how far through its scheduled window today is (0–100%), weighted by duration.
+  // Past-deadline tasks automatically contribute 100%, future tasks 0%.
+  const scheduleProgress = useMemo(() => {
+    const now = Date.now();
+    let totalWeight = 0;
+    let weightedProgress = 0;
+    config.phases.forEach((phase) => {
+      phase.tasks.forEach((task) => {
+        const start = new Date(task.start).getTime();
+        const end = new Date(task.end).getTime();
+        const duration = Math.max(1, end - start);
+        const elapsed = clamp((now - start) / duration, 0, 1);
+        weightedProgress += elapsed * duration;
+        totalWeight += duration;
+      });
+    });
+    return totalWeight > 0 ? Math.round((weightedProgress / totalWeight) * 100) : 0;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config]);
+
+  // On-track: actual approved work vs what the schedule says should be done by now
+  const onTrack = overallPct >= scheduleProgress;
+
+  // Live countdown to investor pitch
+  const [countdown, setCountdown] = useState({ days: 0, hours: 0, mins: 0, secs: 0 });
+  useEffect(() => {
+    function compute() {
+      const target = new Date(config.projectEnd + "T00:00:00").getTime();
+      const diff = Math.max(0, target - Date.now());
+      setCountdown({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        mins: Math.floor((diff % 3600000) / 60000),
+        secs: Math.floor((diff % 60000) / 1000),
+      });
+    }
+    compute();
+    const id = setInterval(compute, 1000);
+    return () => clearInterval(id);
+  }, [config.projectEnd]);
 
   if (loading) {
     return (
@@ -423,21 +464,89 @@ export default function TimelinePage() {
 
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Overall Progress", value: `${overallPct}%`, sub: `${doneSubtasks}/${totalSubtasks} subtasks done`, icon: <Activity className="h-5 w-5 text-indigo-600" />, bg: "bg-indigo-50" },
-          { label: "Time Elapsed", value: `${timeElapsedPct}%`, sub: `Day ${daysElapsed} of ${totalDays}`, icon: <Clock className="h-5 w-5 text-blue-600" />, bg: "bg-blue-50" },
-          { label: "Status", value: onTrack ? "On Track" : "Behind", sub: onTrack ? "Ahead of schedule" : "Progress < time elapsed", icon: <TrendingDown className={`h-5 w-5 ${onTrack ? "text-green-600" : "text-red-500"}`} />, bg: onTrack ? "bg-green-50" : "bg-red-50" },
-          { label: "Days to Pitch", value: String(daysLeft), sub: formatDate(config.projectEnd), icon: <Target className="h-5 w-5 text-amber-600" />, bg: "bg-amber-50" },
-        ].map((kpi) => (
-          <div key={kpi.label} className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4">
-            <div className={`${kpi.bg} rounded-xl p-2.5 shrink-0`}>{kpi.icon}</div>
+
+        {/* Overall Progress — schedule-weighted across all phase tasks */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="bg-indigo-50 rounded-xl p-2.5 shrink-0">
+              <Activity className="h-5 w-5 text-indigo-600" />
+            </div>
             <div>
-              <p className="text-xs text-gray-400 font-medium">{kpi.label}</p>
-              <p className="text-xl font-bold text-gray-900 leading-tight">{kpi.value}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{kpi.sub}</p>
+              <p className="text-xs text-gray-400 font-medium">Overall Progress</p>
+              <p className="text-2xl font-bold text-gray-900 leading-tight">{scheduleProgress}%</p>
             </div>
           </div>
-        ))}
+          <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2">
+            <div
+              className="h-1.5 rounded-full bg-indigo-500 transition-all duration-700"
+              style={{ width: `${scheduleProgress}%` }}
+            />
+          </div>
+          <p className="text-xs text-gray-400">
+            Schedule-based · {overallPct}% tasks approved ({doneSubtasks}/{totalSubtasks})
+          </p>
+        </div>
+
+        {/* Time Elapsed */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4">
+          <div className="bg-blue-50 rounded-xl p-2.5 shrink-0">
+            <Clock className="h-5 w-5 text-blue-600" />
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 font-medium">Time Elapsed</p>
+            <p className="text-xl font-bold text-gray-900 leading-tight">{timeElapsedPct}%</p>
+            <p className="text-xs text-gray-400 mt-0.5">Day {daysElapsed} of {totalDays}</p>
+          </div>
+        </div>
+
+        {/* Status */}
+        <div className={`bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4`}>
+          <div className={`${onTrack ? "bg-green-50" : "bg-red-50"} rounded-xl p-2.5 shrink-0`}>
+            <TrendingDown className={`h-5 w-5 ${onTrack ? "text-green-600" : "text-red-500"}`} />
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 font-medium">Status</p>
+            <p className={`text-xl font-bold leading-tight ${onTrack ? "text-green-600" : "text-red-500"}`}>
+              {onTrack ? "On Track" : "Behind"}
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {overallPct}% done · {scheduleProgress}% due
+            </p>
+          </div>
+        </div>
+
+        {/* Countdown to Pitch */}
+        <div className="bg-white rounded-2xl border border-amber-200 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="bg-amber-50 rounded-xl p-2 shrink-0">
+              <Target className="h-4 w-4 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 font-medium">Investor Pitch</p>
+              <p className="text-[10px] text-amber-600 font-semibold">{formatDate(config.projectEnd)}</p>
+            </div>
+          </div>
+          {countdown.days === 0 && countdown.hours === 0 && countdown.mins === 0 && countdown.secs === 0 ? (
+            <p className="text-sm font-bold text-amber-600">Pitch day! 🎯</p>
+          ) : (
+            <div className="grid grid-cols-4 gap-1">
+              {[
+                { v: countdown.days, u: "days" },
+                { v: countdown.hours, u: "hours" },
+                { v: countdown.mins, u: "mins" },
+                { v: countdown.secs, u: "sec" },
+              ].map(({ v, u }) => (
+                <div key={u} className="flex flex-col items-center bg-amber-50 rounded-lg py-1.5">
+                  <span className="text-base font-bold text-amber-700 tabular-nums leading-none">
+                    {String(v).padStart(2, "0")}
+                  </span>
+                  <span className="text-[9px] text-amber-500 font-semibold uppercase tracking-wide mt-0.5">{u}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
 
       {/* Tab switcher */}
