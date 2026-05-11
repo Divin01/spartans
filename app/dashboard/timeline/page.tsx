@@ -268,7 +268,7 @@ export default function TimelinePage() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [config, setConfig] = useState<ProjectConfig>(DEFAULT_CONFIG);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"burndown" | "gantt">("burndown");
+  const [tab, setTab] = useState<"burndown" | "gantt" | "milestones">("burndown");
   const [burndownView, setBurndownView] = useState<"full" | "month" | "week">("full");
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
   const [showEdit, setShowEdit] = useState(false);
@@ -415,8 +415,22 @@ export default function TimelinePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
-  // On-track: actual approved work vs what the schedule says should be done by now
-  const onTrack = overallPct >= scheduleProgress;
+  // Nuanced status: compare actual approved work vs scheduled completion
+  const statusGap = scheduleProgress - overallPct;
+  const statusLabel =
+    statusGap <= -5 ? "Ahead" :
+    statusGap <= 5  ? "On Track" :
+    statusGap <= 15 ? "Slightly Behind" :
+    statusGap <= 30 ? "Delayed" : "At Risk";
+  const statusColor =
+    statusGap <= 5  ? "text-green-600" :
+    statusGap <= 15 ? "text-yellow-500" :
+    statusGap <= 30 ? "text-orange-500" : "text-red-500";
+  const statusBg =
+    statusGap <= 5  ? "bg-green-50" :
+    statusGap <= 15 ? "bg-yellow-50" :
+    statusGap <= 30 ? "bg-orange-50" : "bg-red-50";
+  const onTrack = statusGap <= 5;
 
   // Live countdown to investor pitch
   const [countdown, setCountdown] = useState({ days: 0, hours: 0, mins: 0, secs: 0 });
@@ -500,15 +514,13 @@ export default function TimelinePage() {
         </div>
 
         {/* Status */}
-        <div className={`bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4`}>
-          <div className={`${onTrack ? "bg-green-50" : "bg-red-50"} rounded-xl p-2.5 shrink-0`}>
-            <TrendingDown className={`h-5 w-5 ${onTrack ? "text-green-600" : "text-red-500"}`} />
+        <div className="bg-white rounded-2xl border border-gray-200 p-5 flex items-center gap-4">
+          <div className={`${statusBg} rounded-xl p-2.5 shrink-0`}>
+            <TrendingDown className={`h-5 w-5 ${statusColor}`} />
           </div>
           <div>
             <p className="text-xs text-gray-400 font-medium">Status</p>
-            <p className={`text-xl font-bold leading-tight ${onTrack ? "text-green-600" : "text-red-500"}`}>
-              {onTrack ? "On Track" : "Behind"}
-            </p>
+            <p className={`text-xl font-bold leading-tight ${statusColor}`}>{statusLabel}</p>
             <p className="text-xs text-gray-400 mt-0.5">
               {overallPct}% done · {scheduleProgress}% due
             </p>
@@ -516,31 +528,47 @@ export default function TimelinePage() {
         </div>
 
         {/* Countdown to Pitch */}
-        <div className="bg-white rounded-2xl border border-amber-200 p-5">
+        <div className={`rounded-2xl border p-5 bg-black ${
+          countdown.days <= 14 ? "border-red-900/50" :
+          countdown.days <= 30 ? "border-orange-900/50" : "border-white/10"
+        }`}>
           <div className="flex items-center gap-2 mb-3">
-            <div className="bg-amber-50 rounded-xl p-2 shrink-0">
-              <Target className="h-4 w-4 text-amber-600" />
-            </div>
+            <Target className={`h-4 w-4 ${
+              countdown.days <= 14 ? "text-red-400" :
+              countdown.days <= 30 ? "text-orange-400" : "text-gray-500"
+            }`} />
             <div>
-              <p className="text-xs text-gray-400 font-medium">Investor Pitch</p>
-              <p className="text-[10px] text-amber-600 font-semibold">{formatDate(config.projectEnd)}</p>
+              <p className="text-xs text-gray-500 font-medium">Investor Pitch</p>
+              <p className={`text-[10px] font-semibold ${
+                countdown.days <= 14 ? "text-red-400" :
+                countdown.days <= 30 ? "text-orange-400" : "text-gray-500"
+              }`}>{formatDate(config.projectEnd)}</p>
             </div>
           </div>
           {countdown.days === 0 && countdown.hours === 0 && countdown.mins === 0 && countdown.secs === 0 ? (
-            <p className="text-sm font-bold text-amber-600">Pitch day! 🎯</p>
+            <p className="text-sm font-bold text-white">Pitch day! 🎯</p>
           ) : (
-            <div className="grid grid-cols-4 gap-1">
+            <div className="grid grid-cols-4 gap-1.5">
               {[
                 { v: countdown.days, u: "days" },
-                { v: countdown.hours, u: "hours" },
-                { v: countdown.mins, u: "mins" },
+                { v: countdown.hours, u: "hrs" },
+                { v: countdown.mins, u: "min" },
                 { v: countdown.secs, u: "sec" },
               ].map(({ v, u }) => (
-                <div key={u} className="flex flex-col items-center bg-amber-50 rounded-lg py-1.5">
-                  <span className="text-base font-bold text-amber-700 tabular-nums leading-none">
+                <div key={u} className={`flex flex-col items-center rounded-lg py-2 ${
+                  countdown.days <= 14 ? "bg-red-500/20" :
+                  countdown.days <= 30 ? "bg-orange-500/20" : "bg-white/10"
+                }`}>
+                  <span className={`text-lg font-bold tabular-nums leading-none ${
+                    countdown.days <= 14 ? "text-red-300" :
+                    countdown.days <= 30 ? "text-orange-300" : "text-white"
+                  }`}>
                     {String(v).padStart(2, "0")}
                   </span>
-                  <span className="text-[9px] text-amber-500 font-semibold uppercase tracking-wide mt-0.5">{u}</span>
+                  <span className={`text-[9px] font-semibold uppercase tracking-wide mt-0.5 ${
+                    countdown.days <= 14 ? "text-red-500" :
+                    countdown.days <= 30 ? "text-orange-500" : "text-gray-500"
+                  }`}>{u}</span>
                 </div>
               ))}
             </div>
@@ -551,11 +579,14 @@ export default function TimelinePage() {
 
       {/* Tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {(["burndown", "gantt"] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition ${tab === t ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-            {t === "burndown" ? <TrendingDown className="h-4 w-4" /> : <CalendarDays className="h-4 w-4" />}
-            {t === "burndown" ? "Burndown Chart" : "Phase Plan"}
+        {([
+          { id: "burndown" as const, label: "Timeline Analytics", icon: <TrendingDown className="h-4 w-4" /> },
+          { id: "gantt"    as const, label: "Phase Plan",          icon: <CalendarDays className="h-4 w-4" /> },
+          { id: "milestones" as const, label: "Live Progress",     icon: <BarChart3 className="h-4 w-4" /> },
+        ]).map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition ${tab === t.id ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+            {t.icon}{t.label}
           </button>
         ))}
       </div>
@@ -565,7 +596,7 @@ export default function TimelinePage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">Burndown Analysis</h2>
+              <h2 className="text-lg font-bold text-gray-800">Timeline Analytics</h2>
               <p className="text-xs text-gray-400 mt-0.5">Remaining tasks — planned vs. actual vs. projected</p>
             </div>
             <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
@@ -728,14 +759,17 @@ export default function TimelinePage() {
                               const tActive = new Date(task.start) <= new Date() && new Date(task.end) >= new Date();
 
                               return (
-                                <div key={task.id} className="group relative h-6">
+                                <div key={task.id} className="group relative h-6 cursor-pointer">
                                   <div className={`absolute top-0.5 h-5 rounded transition-all ${tDone ? "opacity-60" : tActive ? "opacity-100" : "opacity-40"}`}
                                     style={{ left: `${tLeft}%`, width: `${tWidth}%`, backgroundColor: color + (tDone ? "55" : tActive ? "88" : "33"), border: tActive ? `1.5px solid ${color}` : "none" }}>
                                     <span className="text-[10px] px-1.5 truncate block leading-5" style={{ color }}>{task.id} {task.title}</span>
                                   </div>
                                   <div className="absolute left-0 bottom-7 z-20 hidden group-hover:block bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-nowrap shadow-xl pointer-events-none">
                                     <p className="font-semibold">{task.id}: {task.title}</p>
-                                    <p className="text-gray-300 mt-0.5">{formatDate(task.start)} → {formatDate(task.end)}</p>
+                                    <p className="text-gray-300 mt-0.5">
+                                      {formatDate(task.start)} → {formatDate(task.end)}
+                                      <span className="ml-2 text-white font-semibold">{daysBetween(task.start, task.end)} days</span>
+                                    </p>
                                     <p className="text-gray-400 mt-0.5">Owners: {task.owners.join(", ")}</p>
                                   </div>
                                 </div>
@@ -809,10 +843,19 @@ export default function TimelinePage() {
             );
           })}
 
-          {/* Live task progress by milestone */}
+        </div>
+      )}
+
+      {/* ══════════════════ TAB 3: LIVE PROGRESS ══════════════════ */}
+      {tab === "milestones" && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">Live Task Progress</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Approved subtask completion grouped by milestone</p>
+          </div>
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <h3 className="font-bold text-gray-800 mb-1 flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-indigo-500" />Live Task Progress by Milestone
+              <BarChart3 className="h-4 w-4 text-indigo-500" />Task Progress by Milestone
             </h3>
             <p className="text-xs text-gray-400 mb-5">Auto-updated from approved subtasks</p>
             {Object.keys(milestones).length === 0 ? (
