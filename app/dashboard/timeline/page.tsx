@@ -596,8 +596,8 @@ export default function TimelinePage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-lg font-bold text-gray-800">Timeline Analytics</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Remaining tasks — planned vs. actual vs. projected</p>
+              <h2 className="text-lg font-bold text-gray-800">Burndown Analysis</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Tasks remaining from plan — planned ideal vs. actual approvals vs. velocity projection</p>
             </div>
             <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
               {(["full", "month", "week"] as const).map((v) => (
