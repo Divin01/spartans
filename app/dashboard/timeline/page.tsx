@@ -394,24 +394,24 @@ export default function TimelinePage() {
   const timeElapsedPct = Math.min(100, Math.round((daysElapsed / totalDays) * 100));
   const daysLeft = Math.max(0, daysBetween(today, config.projectEnd));
 
-  // Schedule-based overall progress: for every planned phase task, calculate
-  // how far through its scheduled window today is (0–100%), weighted by duration.
-  // Past-deadline tasks automatically contribute 100%, future tasks 0%.
+  // Schedule-based overall progress: each planned phase task counts equally (weight=1).
+  // Phases with more tasks have proportionally more weight — Phase 4's 8 tasks outweigh
+  // a 2-task phase 4:1. Past-deadline tasks contribute 100%, future tasks 0%.
   const scheduleProgress = useMemo(() => {
     const now = Date.now();
-    let totalWeight = 0;
-    let weightedProgress = 0;
+    let totalTasks = 0;
+    let completedWeight = 0;
     config.phases.forEach((phase) => {
       phase.tasks.forEach((task) => {
         const start = new Date(task.start).getTime();
         const end = new Date(task.end).getTime();
         const duration = Math.max(1, end - start);
         const elapsed = clamp((now - start) / duration, 0, 1);
-        weightedProgress += elapsed * duration;
-        totalWeight += duration;
+        completedWeight += elapsed; // 1 per task, scaled by schedule completion
+        totalTasks += 1;
       });
     });
-    return totalWeight > 0 ? Math.round((weightedProgress / totalWeight) * 100) : 0;
+    return totalTasks > 0 ? Math.round((completedWeight / totalTasks) * 100) : 0;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config]);
 
