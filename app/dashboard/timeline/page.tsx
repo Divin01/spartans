@@ -580,7 +580,7 @@ export default function TimelinePage() {
       {/* Tab switcher */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
         {([
-          { id: "burndown" as const, label: "Timeline Analytics", icon: <TrendingDown className="h-4 w-4" /> },
+          { id: "burndown" as const, label: "Burndown Chart", icon: <TrendingDown className="h-4 w-4" /> },
           { id: "gantt"    as const, label: "Phase Plan",          icon: <CalendarDays className="h-4 w-4" /> },
           { id: "milestones" as const, label: "Live Progress",     icon: <BarChart3 className="h-4 w-4" /> },
         ]).map((t) => (
