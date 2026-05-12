@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
   getTasks,
@@ -14,8 +14,9 @@ import {
   createReview,
   markTaskAsRead,
   createActivityLog,
+  getProjectConfig,
 } from "@/lib/firestore";
-import type { Task, User, Subtask, Review } from "@/lib/types";
+import type { Task, User, Subtask, Review, ProjectConfig } from "@/lib/types";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Plus,
@@ -54,12 +55,14 @@ export default function TasksPage() {
   const [submitModal, setSubmitModal] = useState<Task | null>(null);
   const [reviewerSelect, setReviewerSelect] = useState("");
   const [savingSubmit, setSavingSubmit] = useState(false);
+  const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null);
 
   async function load() {
-    const [t, u, r] = await Promise.all([getTasks(), getUsers(), getReviews()]);
+    const [t, u, r, cfg] = await Promise.all([getTasks(), getUsers(), getReviews(), getProjectConfig()]);
     setTasks(t);
     setUsers(u);
     setReviews(r);
+    if (cfg) setProjectConfig(cfg);
     setLoading(false);
   }
 
@@ -148,6 +151,16 @@ export default function TasksPage() {
     acc[key].push(t);
     return acc;
   }, {});
+
+  // Progressive milestone suggestions from config phase tasks:
+  // show already-used phase task IDs (in plan order) + the next unassigned one.
+  const milestoneSuggestions = useMemo(() => {
+    const allPT = projectConfig?.phases.flatMap((p) => p.tasks) ?? [];
+    const usedIds = new Set(tasks.map((t) => t.milestone));
+    const used = allPT.filter((pt) => usedIds.has(pt.id));
+    const next = allPT.find((pt) => !usedIds.has(pt.id));
+    return [...used.map((pt) => pt.id), ...(next ? [next.id] : [])];
+  }, [tasks, projectConfig]);
 
   // Apply ownership filter
   let filtered: Record<string, Task[]> =
@@ -661,7 +674,7 @@ export default function TasksPage() {
           mode="create"
           users={users}
           userId={user!.id}
-          existingMilestones={Object.keys(milestones)}
+          existingMilestones={milestoneSuggestions}
           onClose={() => setShowCreate(false)}
           onDone={async () => {
             setShowCreate(false);
@@ -677,7 +690,7 @@ export default function TasksPage() {
           task={editingTask}
           users={users}
           userId={user!.id}
-          existingMilestones={Object.keys(milestones)}
+          existingMilestones={milestoneSuggestions}
           onClose={() => setEditingTask(null)}
           onDone={async () => {
             setEditingTask(null);

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { getTasks, getReviews, getProjectConfig, saveProjectConfig } from "@/lib/firestore";
+import { getTasks, getReviews, getProjectConfig, saveProjectConfig, updateTask } from "@/lib/firestore";
 import { useAuth } from "@/lib/auth-context";
-import type { Task, Review, ProjectConfig, Phase, KeyMilestone } from "@/lib/types";
+import type { Task, Review, ProjectConfig, Phase, PhaseTask, KeyMilestone } from "@/lib/types";
 import {
   LineChart,
   Line,
@@ -205,25 +205,75 @@ function EditMilestonesModal({
   onClose: () => void;
 }) {
   const [milestones, setMilestones] = useState<KeyMilestone[]>(config.keyMilestones.map((m) => ({ ...m })));
+  const [phases, setPhases] = useState<Phase[]>(() =>
+    config.phases.map((p) => ({ ...p, tasks: p.tasks.map((t) => ({ ...t, owners: [...t.owners] })) }))
+  );
   const [projectStart, setProjectStart] = useState(config.projectStart);
   const [projectEnd, setProjectEnd] = useState(config.projectEnd);
-  const [totalPlanned, setTotalPlanned] = useState(config.totalPlannedTasks);
   const [saving, setSaving] = useState(false);
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(phases[0]?.id ?? null);
 
   function updateMilestone(i: number, field: keyof KeyMilestone, value: string) {
     setMilestones((prev) => prev.map((m, idx) => idx === i ? { ...m, [field]: value } : m));
   }
 
+  function updatePhase(pi: number, field: keyof Omit<Phase, "tasks" | "id">, value: string) {
+    setPhases((prev) => prev.map((p, i) => i === pi ? { ...p, [field]: value } : p));
+  }
+
+  function addPhase() {
+    const today = new Date().toISOString().slice(0, 10);
+    const newId = String(Date.now());
+    setPhases((prev) => [...prev, { id: newId, title: "New Phase", start: today, end: today, tasks: [] }]);
+    setExpandedPhase(newId);
+  }
+
+  function removePhase(pi: number) {
+    setPhases((prev) => {
+      const next = prev.filter((_, i) => i !== pi);
+      setExpandedPhase(next[0]?.id ?? null);
+      return next;
+    });
+  }
+
+  function addPhaseTask(pi: number) {
+    const today = new Date().toISOString().slice(0, 10);
+    setPhases((prev) => prev.map((p, i) => {
+      if (i !== pi) return p;
+      const taskId = `${p.id}.${p.tasks.length + 1}`;
+      return { ...p, tasks: [...p.tasks, { id: taskId, title: "New Task", start: today, end: today, owners: [] }] };
+    }));
+  }
+
+  function removePhaseTask(pi: number, ti: number) {
+    setPhases((prev) => prev.map((p, i) => i === pi ? { ...p, tasks: p.tasks.filter((_, j) => j !== ti) } : p));
+  }
+
+  function updatePhaseTask(pi: number, ti: number, field: keyof Omit<PhaseTask, "owners">, value: string) {
+    setPhases((prev) => prev.map((p, i) => {
+      if (i !== pi) return p;
+      return { ...p, tasks: p.tasks.map((t, j) => j === ti ? { ...t, [field]: value } : t) };
+    }));
+  }
+
+  function updatePhaseTaskOwners(pi: number, ti: number, value: string) {
+    setPhases((prev) => prev.map((p, i) => {
+      if (i !== pi) return p;
+      return { ...p, tasks: p.tasks.map((t, j) => j === ti ? { ...t, owners: value.split(",").map((s) => s.trim()).filter(Boolean) } : t) };
+    }));
+  }
+
   async function handleSave() {
     setSaving(true);
-    await onSave({ ...config, projectStart, projectEnd, totalPlannedTasks: totalPlanned, keyMilestones: milestones, updatedAt: new Date().toISOString() });
+    const totalPlannedTasks = phases.reduce((s, p) => s + p.tasks.length, 0);
+    await onSave({ ...config, projectStart, projectEnd, totalPlannedTasks, keyMilestones: milestones, phases, updatedAt: new Date().toISOString() });
     setSaving(false);
     onClose();
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">Edit Project Settings</h2>
@@ -235,7 +285,8 @@ function EditMilestonesModal({
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
-          <div className="grid grid-cols-3 gap-4">
+          {/* Project dates */}
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-xs font-medium text-gray-600 block mb-1">Project Start</label>
               <input type="date" value={projectStart} onChange={(e) => setProjectStart(e.target.value)}
@@ -246,13 +297,9 @@ function EditMilestonesModal({
               <input type="date" value={projectEnd} onChange={(e) => setProjectEnd(e.target.value)}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Total Planned Tasks</label>
-              <input type="number" min={1} value={totalPlanned} onChange={(e) => setTotalPlanned(Number(e.target.value))}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-            </div>
           </div>
 
+          {/* Key Milestones */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-semibold text-gray-700">Key Milestones</p>
@@ -280,6 +327,74 @@ function EditMilestonesModal({
                     className="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Phases */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-700">
+                Phases
+                <span className="ml-2 text-xs font-normal text-gray-400">
+                  {phases.reduce((s, p) => s + p.tasks.length, 0)} planned tasks total
+                </span>
+              </p>
+              <button onClick={addPhase}
+                className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition">
+                <Plus className="h-3.5 w-3.5" />Add Phase
+              </button>
+            </div>
+            <div className="space-y-3">
+              {phases.map((phase, pi) => (
+                <div key={phase.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                  {/* Phase header */}
+                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer"
+                    onClick={() => setExpandedPhase(expandedPhase === phase.id ? null : phase.id)}>
+                    <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${expandedPhase === phase.id ? "" : "-rotate-90"}`} />
+                    <input value={phase.title} onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updatePhase(pi, "title", e.target.value)}
+                      className="flex-1 bg-transparent text-sm font-semibold text-gray-800 focus:outline-none" />
+                    <input type="date" value={phase.start} onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updatePhase(pi, "start", e.target.value)}
+                      className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white" />
+                    <span className="text-xs text-gray-400">to</span>
+                    <input type="date" value={phase.end} onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updatePhase(pi, "end", e.target.value)}
+                      className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white" />
+                    <button onClick={(e) => { e.stopPropagation(); removePhase(pi); }}
+                      className="p-1.5 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  {/* Phase tasks */}
+                  {expandedPhase === phase.id && (
+                    <div className="px-3 py-3 space-y-2">
+                      {phase.tasks.map((t, ti) => (
+                        <div key={t.id} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 items-center">
+                          <span className="text-[10px] text-gray-400 font-mono w-8">{t.id}</span>
+                          <input value={t.title} onChange={(e) => updatePhaseTask(pi, ti, "title", e.target.value)}
+                            placeholder="Task title"
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <input type="date" value={t.start} onChange={(e) => updatePhaseTask(pi, ti, "start", e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <span className="text-xs text-gray-400">to</span>
+                          <input type="date" value={t.end} onChange={(e) => updatePhaseTask(pi, ti, "end", e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          <button onClick={() => removePhaseTask(pi, ti)}
+                            className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <button onClick={() => addPhaseTask(pi)}
+                        className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 mt-1 transition">
+                        <Plus className="h-3 w-3" />Add task
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -319,13 +434,33 @@ export default function TimelinePage() {
     Promise.all([getTasks(), getReviews(), getProjectConfig()]).then(([t, r, cfg]) => {
       setTasks(t);
       setReviews(r);
-      if (cfg) setConfig(cfg);
+      if (cfg) {
+        setConfig(cfg);
+      } else {
+        // First run — seed DEFAULT_CONFIG so all future edits persist
+        saveProjectConfig({ ...DEFAULT_CONFIG, updatedAt: new Date().toISOString(), updatedBy: "system" });
+        setConfig(DEFAULT_CONFIG);
+      }
       setLoading(false);
     });
   }, []);
 
   async function handleSaveConfig(updated: ProjectConfig) {
     const withUser = { ...updated, updatedBy: user?.name ?? "PM", updatedAt: new Date().toISOString() };
+
+    // Detect renamed keyMilestones and propagate to all matching Firestore tasks
+    const renames: Record<string, string> = {};
+    config.keyMilestones.forEach((old, i) => {
+      const next = updated.keyMilestones[i];
+      if (next && old.title !== next.title) renames[old.title] = next.title;
+    });
+    if (Object.keys(renames).length > 0) {
+      const affected = tasks.filter((t) => t.milestone in renames);
+      await Promise.all(affected.map((t) => updateTask(t.id, { milestone: renames[t.milestone] })));
+      const freshTasks = await getTasks();
+      setTasks(freshTasks);
+    }
+
     await saveProjectConfig(withUser);
     setConfig(withUser);
   }
@@ -366,35 +501,22 @@ export default function TimelinePage() {
     if (N === 0) return [];
     const totalProjectDays = daysBetween(projectStart, projectEnd);
 
-    interface KmBucket {
-      liveTaskCount: number;
-      totalSubs: number;
-      approvedByDate: Record<string, number>;
-      isConfigDone: boolean;
-      configDoneDate: string;
-    }
-    const kmBuckets: Record<string, KmBucket> = {};
-    config.keyMilestones.forEach((km) => {
-      kmBuckets[km.title] = {
-        liveTaskCount: 0, totalSubs: 0, approvedByDate: {},
-        isConfigDone: km.status === "done", configDoneDate: km.date,
-      };
-    });
+    // Phase-task buckets — keyed by pt.id (e.g. "4.1").
+    // task.milestone === pt.id links each Firestore task to its plan slot.
+    interface PtBucket { totalSubs: number; approvedByDate: Record<string, number> }
+    const ptBuckets: Record<string, PtBucket> = {};
+    allPlanTasks.forEach((pt) => { ptBuckets[pt.id] = { totalSubs: 0, approvedByDate: {} }; });
     tasks.forEach((task) => {
       const key = task.milestone || "";
-      if (!kmBuckets[key]) return;
-      kmBuckets[key].liveTaskCount += 1;
+      if (!ptBuckets[key]) return;
       task.subtasks.forEach((sub) => {
-        kmBuckets[key].totalSubs += 1;
+        ptBuckets[key].totalSubs += 1;
         if (isEffectivelyDone(task.id, sub) && sub.completedAt) {
           const d = sub.completedAt.slice(0, 10);
-          kmBuckets[key].approvedByDate[d] = (kmBuckets[key].approvedByDate[d] ?? 0) + 1;
+          ptBuckets[key].approvedByDate[d] = (ptBuckets[key].approvedByDate[d] ?? 0) + 1;
         }
       });
     });
-    const kmList = config.keyMilestones.map((km) => kmBuckets[km.title]);
-    const totalWeight = kmList.reduce((s, b) => s + Math.max(1, b.liveTaskCount), 0);
-    // allPlanTasks already declared above — used for tooltip active-task lookup
 
     const todayStr = new Date().toISOString().slice(0, 10);
     let startDate = projectStart;
@@ -445,22 +567,20 @@ export default function TimelinePage() {
       let actualRemaining: number | null = null;
       let velocityPerWeek = 0;
       if (isPast) {
-        let weightedRemaining = 0;
-        kmList.forEach((b) => {
-          const weight = Math.max(1, b.liveTaskCount);
-          let fractionDone = 0;
-          if (b.isConfigDone && date >= b.configDoneDate) {
-            fractionDone = 1;
-          } else if (b.totalSubs > 0) {
+        let remaining = 0;
+        allPlanTasks.forEach((pt) => {
+          const b = ptBuckets[pt.id];
+          if (b.totalSubs === 0) {
+            remaining += 1;
+          } else {
             let approvedUpTo = 0;
             Object.entries(b.approvedByDate).forEach(([d, cnt]) => {
               if (d <= date) approvedUpTo += cnt;
             });
-            fractionDone = Math.min(1, approvedUpTo / b.totalSubs);
+            remaining += 1 - Math.min(1, approvedUpTo / b.totalSubs);
           }
-          weightedRemaining += (1 - fractionDone) * weight;
         });
-        actualRemaining = Math.round((weightedRemaining / totalWeight) * N * 10) / 10;
+        actualRemaining = Math.round(remaining * 10) / 10;
         const daysWorked2 = Math.max(1, daysBetween(projectStart, date));
         velocityPerWeek = Math.round(((N - actualRemaining) / daysWorked2) * 7 * 10) / 10;
         lastActualRemaining = actualRemaining;
@@ -486,16 +606,10 @@ export default function TimelinePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, reviews, config, burndownView]);
 
-  // ── Milestone progress — ALL keyMilestones seeded, live tasks fill data ────
-  // Seeding ensures every config keyMilestone always appears in KPIs and Tab 3,
-  // even if no Firestore tasks have been assigned to it yet.
+  // ── Milestone progress — only groups with live tasks ──────────────────────
+  // Tab 3 shows only milestones that have been assigned Firestore tasks.
   const milestones = useMemo(() => {
-    // Seed with every keyMilestone from config (guaranteed baseline)
     const acc: Record<string, { tasks: Task[]; done: number; total: number }> = {};
-    config.keyMilestones.forEach((km) => {
-      acc[km.title] = { tasks: [], done: 0, total: 0 };
-    });
-    // Fill in live Firestore task data
     tasks.forEach((t) => {
       const key = t.milestone || "Uncategorized";
       if (!acc[key]) acc[key] = { tasks: [], done: 0, total: 0 };
@@ -505,7 +619,7 @@ export default function TimelinePage() {
     });
     return acc;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, reviews, config.keyMilestones]);
+  }, [tasks, reviews]);
 
   // ── KPIs ─────────────────────────────────────────────────
   //
@@ -541,32 +655,23 @@ export default function TimelinePage() {
   const scheduleProgress = timeElapsedPct;
 
   const overallPct = (() => {
-    const N = config.phases.flatMap((p) => p.tasks).length;
-    if (N === 0) return 0;
-    // Seed from ALL keyMilestones (identical setup to burndown kmBuckets)
-    type Bkt = { liveTaskCount: number; totalSubs: number; doneNow: number; isConfigDone: boolean };
-    const bkts: Record<string, Bkt> = {};
-    config.keyMilestones.forEach((km) => {
-      bkts[km.title] = { liveTaskCount: 0, totalSubs: 0, doneNow: 0, isConfigDone: km.status === "done" };
+    const allPT = config.phases.flatMap((p) => p.tasks);
+    if (allPT.length === 0) return 0;
+    let remaining = 0;
+    allPT.forEach((pt) => {
+      const matching = tasks.filter((t) => t.milestone === pt.id);
+      if (matching.length === 0) {
+        remaining += 1;
+      } else {
+        let total = 0, done = 0;
+        matching.forEach((t) => {
+          total += t.subtasks.length;
+          done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
+        });
+        remaining += total > 0 ? 1 - Math.min(1, done / total) : 1;
+      }
     });
-    tasks.forEach((task) => {
-      const key = task.milestone || "";
-      if (!bkts[key]) return;
-      bkts[key].liveTaskCount += 1;
-      task.subtasks.forEach((sub) => {
-        bkts[key].totalSubs += 1;
-        if (isEffectivelyDone(task.id, sub)) bkts[key].doneNow += 1;
-      });
-    });
-    const bList = config.keyMilestones.map((km) => bkts[km.title]);
-    const totalW = bList.reduce((s, b) => s + Math.max(1, b.liveTaskCount), 0);
-    let weightedRemaining = 0;
-    bList.forEach((b) => {
-      const w = Math.max(1, b.liveTaskCount);
-      const fDone = b.isConfigDone ? 1 : (b.totalSubs > 0 ? Math.min(1, b.doneNow / b.totalSubs) : 0);
-      weightedRemaining += (1 - fDone) * w;
-    });
-    return Math.round((1 - weightedRemaining / totalW) * 100);
+    return Math.round((1 - remaining / allPT.length) * 100);
   })();
 
   // Nuanced status: compare actual approved work vs scheduled completion
