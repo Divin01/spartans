@@ -520,36 +520,54 @@ export default function TimelinePage() {
   const totalSubtasks = milestoneEntries.reduce((s, g) => s + g.total, 0);
   const doneSubtasks  = milestoneEntries.reduce((s, g) => s + g.done,  0);
 
-  // Weighted overall progress:
-  //   weight  = max(1, taskCount)  — milestones with no live tasks still count
-  //   completion = 1 if config status=="done", else approvedSubs/totalSubs
-  const overallPct = (() => {
-    const entries = Object.entries(milestones);
-    if (entries.length === 0) return 0;
-    const totalW = entries.reduce((s, [, g]) => s + Math.max(1, g.tasks.length), 0);
-    const weighted = entries.reduce((sum, [key, g]) => {
-      const w = Math.max(1, g.tasks.length);
-      const isConfigDone = config.keyMilestones.find((m) => m.title === key)?.status === "done";
-      const completion = isConfigDone ? 1 : (g.total > 0 ? g.done / g.total : 0);
-      return sum + completion * w;
-    }, 0);
-    return Math.round((weighted / totalW) * 100);
-  })();
-
   const today = new Date().toISOString().slice(0, 10);
   const daysElapsed = Math.max(0, daysBetween(config.projectStart, today));
   const totalDays = daysBetween(config.projectStart, config.projectEnd);
   const timeElapsedPct = Math.min(100, Math.round((daysElapsed / totalDays) * 100));
   const daysLeft = Math.max(0, daysBetween(today, config.projectEnd));
 
-  // scheduleProgress: fraction of planned phase tasks whose deadline has passed
-  const scheduleProgress = useMemo(() => {
-    const allPlanTasks = config.phases.flatMap((p) => p.tasks);
-    if (allPlanTasks.length === 0) return timeElapsedPct;
-    const pastDeadlineCount = allPlanTasks.filter((t) => t.end < today).length;
-    return Math.round((pastDeadlineCount / allPlanTasks.length) * 100);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config, today]);
+  // ── All KPIs share the same N=17 phase-task scale as the burndown chart ────
+  //
+  // scheduleProgress  = timeElapsedPct
+  //   The planned burndown line is a straight diagonal N→0 across the project
+  //   duration, so "how much of the plan should be done by today" = time elapsed%.
+  //
+  // overallPct  — exact same weighted-bucket formula as the burndown actual line,
+  //   evaluated at today's date. Both use keyMilestone group completion weighted
+  //   by max(1, liveTaskCount), normalized to 0–100.
+  //   → statusGap = scheduleProgress − overallPct = planned% − actual%
+  //     Positive gap  = team is behind the ideal burn line  (red/orange)
+  //     Negative gap  = team is ahead of the plan           (green)
+  const scheduleProgress = timeElapsedPct;
+
+  const overallPct = (() => {
+    const N = config.phases.flatMap((p) => p.tasks).length;
+    if (N === 0) return 0;
+    // Seed from ALL keyMilestones (identical setup to burndown kmBuckets)
+    type Bkt = { liveTaskCount: number; totalSubs: number; doneNow: number; isConfigDone: boolean };
+    const bkts: Record<string, Bkt> = {};
+    config.keyMilestones.forEach((km) => {
+      bkts[km.title] = { liveTaskCount: 0, totalSubs: 0, doneNow: 0, isConfigDone: km.status === "done" };
+    });
+    tasks.forEach((task) => {
+      const key = task.milestone || "";
+      if (!bkts[key]) return;
+      bkts[key].liveTaskCount += 1;
+      task.subtasks.forEach((sub) => {
+        bkts[key].totalSubs += 1;
+        if (isEffectivelyDone(task.id, sub)) bkts[key].doneNow += 1;
+      });
+    });
+    const bList = config.keyMilestones.map((km) => bkts[km.title]);
+    const totalW = bList.reduce((s, b) => s + Math.max(1, b.liveTaskCount), 0);
+    let weightedRemaining = 0;
+    bList.forEach((b) => {
+      const w = Math.max(1, b.liveTaskCount);
+      const fDone = b.isConfigDone ? 1 : (b.totalSubs > 0 ? Math.min(1, b.doneNow / b.totalSubs) : 0);
+      weightedRemaining += (1 - fDone) * w;
+    });
+    return Math.round((1 - weightedRemaining / totalW) * 100);
+  })();
 
   // Nuanced status: compare actual approved work vs scheduled completion
   const statusGap = scheduleProgress - overallPct;
@@ -633,7 +651,7 @@ export default function TimelinePage() {
             />
           </div>
           <p className="text-xs text-gray-400">
-            Milestone-based · {doneSubtasks}/{totalSubtasks} subtasks approved across {milestoneEntries.length} milestones
+            {doneSubtasks}/{totalSubtasks} subtasks approved · {scheduleProgress}% of plan due today
           </p>
         </div>
 
@@ -658,7 +676,7 @@ export default function TimelinePage() {
             <p className="text-xs text-gray-400 font-medium">Status</p>
             <p className={`text-xl font-bold leading-tight ${statusColor}`}>{statusLabel}</p>
             <p className="text-xs text-gray-400 mt-0.5">
-              {overallPct}% done · {scheduleProgress}% due
+              {overallPct}% actual · {scheduleProgress}% planned
             </p>
           </div>
         </div>
