@@ -564,6 +564,30 @@ export default function TimelinePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, reviews]);
 
+  // ── Per-phase-task live completion % ──────────────────────
+  // Maps pt.id (e.g. "4.1") → 0-100. Used by Phase Plan tab status badges.
+  const ptPctMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    config.phases.flatMap((p) => p.tasks).forEach((pt) => {
+      const matching = tasks.filter((t) => {
+        const m = t.milestone ?? "";
+        if (m === pt.id) return true;
+        if (!m.startsWith(pt.id)) return false;
+        const sep = m[pt.id.length];
+        return sep === " " || sep === "." || sep === "-";
+      });
+      if (matching.length === 0) { map[pt.id] = 0; return; }
+      let total = 0, done = 0;
+      matching.forEach((t) => {
+        total += t.subtasks.length;
+        done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
+      });
+      map[pt.id] = total > 0 ? Math.round((done / total) * 100) : 0;
+    });
+    return map;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, reviews, config]);
+
   // ── KPIs ─────────────────────────────────────────────────
   //
   // overallPct: weighted by TASK COUNT per milestone group.
@@ -910,7 +934,13 @@ export default function TimelinePage() {
 
             return (
               <div className="bg-white rounded-2xl border border-gray-200 p-6 overflow-x-auto">
-                <h3 className="font-bold text-gray-800 mb-1">Timeline Overview</h3>
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="font-bold text-gray-800">Timeline Overview</h3>
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">
+                    <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+                    Today &mdash; {formatDate(today, { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                </div>
                 <p className="text-xs text-gray-400 mb-6">
                   {formatDate(config.projectStart, { month: "short", year: "numeric" })} → {formatDate(config.projectEnd, { month: "short", year: "numeric" })}
                 </p>
@@ -965,8 +995,9 @@ export default function TimelinePage() {
                             {phase.tasks.map((task) => {
                               const tLeft = clamp(((new Date(task.start).getTime() - projectStartMs) / totalMs) * 100, 0, 100);
                               const tWidth = clamp(((new Date(task.end).getTime() - new Date(task.start).getTime()) / totalMs) * 100, 0.5, 100 - tLeft);
-                              const tDone = new Date(task.end) < new Date();
-                              const tActive = new Date(task.start) <= new Date() && new Date(task.end) >= new Date();
+                              const livePct = ptPctMap[task.id] ?? 0;
+                              const tDone = livePct === 100;
+                              const tActive = !tDone && new Date(task.start) <= new Date() && new Date(task.end) >= new Date();
 
                               return (
                                 <div key={task.id} className="group relative h-6 cursor-pointer">
@@ -1007,10 +1038,6 @@ export default function TimelinePage() {
                     </div>
                   </div>
                 </div>
-                <div className="mt-4 flex items-center gap-2 text-xs text-red-400">
-                  <div className="w-4 h-px bg-red-400" />
-                  Today ({formatDate(today, { day: "numeric", month: "short", year: "numeric" })})
-                </div>
               </div>
             );
           })()}
@@ -1032,18 +1059,21 @@ export default function TimelinePage() {
                     <span>ID</span><span>Task</span><span>Start</span><span>End</span><span>Owners</span>
                   </div>
                   {phase.tasks.map((task) => {
-                    const tDone = new Date(task.end) < new Date();
                     const tActive = new Date(task.start) <= new Date() && new Date(task.end) >= new Date();
+                    const livePct = ptPctMap[task.id] ?? 0;
+                    const isFullyDone = livePct === 100;
+                    const hasProgress = livePct > 0 && livePct < 100;
                     return (
-                      <div key={task.id} className={`grid grid-cols-[60px_1fr_110px_110px_1fr] gap-4 px-6 py-3 text-sm items-center transition hover:bg-gray-50 ${tActive ? "bg-blue-50/40" : ""}`}>
+                      <div key={task.id} className={`grid grid-cols-[60px_1fr_110px_110px_1fr] gap-4 px-6 py-3 text-sm items-center transition hover:bg-gray-50 ${tActive && !isFullyDone ? "bg-blue-50/40" : ""}`}>
                         <span className="font-mono text-xs font-bold" style={{ color }}>{task.id}</span>
-                        <span className={`font-medium ${tDone ? "text-gray-400 line-through" : "text-gray-800"}`}>{task.title}</span>
+                        <span className={`font-medium ${isFullyDone ? "text-gray-400 line-through" : "text-gray-800"}`}>{task.title}</span>
                         <span className="text-xs text-gray-500">{formatDate(task.start, { day: "numeric", month: "short" })}</span>
                         <span className="text-xs text-gray-500">{formatDate(task.end, { day: "numeric", month: "short" })}</span>
                         <div className="flex items-center gap-1 flex-wrap">
                           {task.owners.map((o) => <span key={o} className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{o}</span>)}
-                          {tActive && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Active</span>}
-                          {tDone && <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600 font-semibold">Done</span>}
+                          {isFullyDone && <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-600 font-semibold">Done</span>}
+                          {hasProgress && !isFullyDone && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-semibold">{livePct}% done</span>}
+                          {!isFullyDone && !hasProgress && tActive && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-semibold">Active</span>}
                         </div>
                       </div>
                     );
