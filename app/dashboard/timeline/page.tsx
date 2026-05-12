@@ -136,18 +136,60 @@ const PHASE_COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8
 // ── Burndown tooltip ─────────────────────────────────────
 function BurndownTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
+  const pt = payload[0]?.payload;
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-lg min-w-[160px] text-xs">
-      <p className="font-semibold text-gray-700 mb-2">{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center justify-between gap-4 mb-1">
-          <span className="flex items-center gap-1.5 text-gray-500">
-            <span className="w-2 h-2 rounded-full inline-block" style={{ background: p.color }} />
-            {p.name}
-          </span>
-          <span className="font-semibold text-gray-700">{p.value != null ? `${p.value} tasks` : "—"}</span>
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-xl min-w-[260px] text-xs space-y-2">
+      <p className="font-bold text-gray-800 text-sm">{label}</p>
+
+      {pt?.activePhases?.length > 0 && (
+        <div className="space-y-0.5">
+          {pt.activePhases.map((ph: string) => (
+            <div key={ph} className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+              <span className="text-indigo-600 font-semibold">{ph}</span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
+
+      {pt?.activePlanTasks?.length > 0 && (
+        <div className="border-t border-gray-100 pt-2">
+          <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold mb-1">In-scope tasks</p>
+          <div className="space-y-0.5">
+            {pt.activePlanTasks.slice(0, 5).map((t: string) => (
+              <p key={t} className="text-gray-600">· {t}</p>
+            ))}
+            {pt.activePlanTasks.length > 5 && (
+              <p className="text-gray-400">+{pt.activePlanTasks.length - 5} more</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {pt?.nearbyMilestone && (
+        <div className="flex items-center gap-1.5 bg-amber-50 rounded-lg px-2 py-1">
+          <span className="text-amber-500">★</span>
+          <span className="text-amber-700 font-medium">{pt.nearbyMilestone}</span>
+        </div>
+      )}
+
+      <div className="border-t border-gray-100 pt-2 space-y-1.5">
+        {payload.map((p: any) => p.value != null && (
+          <div key={p.dataKey} className="flex items-center justify-between gap-4">
+            <span className="flex items-center gap-1.5 text-gray-500">
+              <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: p.color }} />
+              {p.name}
+            </span>
+            <span className="font-bold text-gray-800">{p.value} left</span>
+          </div>
+        ))}
+      </div>
+
+      {pt?.velocityPerWeek != null && pt.velocityPerWeek > 0 && (
+        <p className="text-[10px] text-gray-400 border-t border-gray-100 pt-1.5">
+          Burn rate: ~{pt.velocityPerWeek} milestones/week
+        </p>
+      )}
     </div>
   );
 }
@@ -297,22 +339,64 @@ export default function TimelinePage() {
   }
 
   // ── Burndown data ────────────────────────────────────────
+  // ── Milestone-count Burndown ────────────────────────────────────────────────
+  // Y-axis = milestones remaining (raw count, NOT a %).
+  //
+  // Planned  : step-down using each live milestone group’s scheduled deadline
+  //            (max task.dueDate within the group). Starts at N, drops by 1 as
+  //            each group’s deadline passes — driven by phase schedule.
+  //
+  // Actual   : fractional remaining = Σ(1 − done_by_date/total) per group.
+  //            Reconstructed from sub.completedAt.  e.g. “2.5” = half of 5
+  //            milestones’ work is done.
+  //
+  // Projection: linear burn from today’s actual count → 0 by project end.
+  //
+  // Tooltip : shows which phase is active at that date + raw counts.
   const burndownData = useMemo(() => {
-    const { projectStart, projectEnd, totalPlannedTasks } = config;
-    const totalDays = daysBetween(projectStart, projectEnd);
-    if (totalDays <= 0) return [];
+    const { projectStart, projectEnd } = config;
+    if (daysBetween(projectStart, projectEnd) <= 0) return [];
 
-    const completionsByDate: Record<string, number> = {};
+    // ── Phase tasks are the unit of work — ALL tasks from config.phases ──────
+    // N = total planned phase tasks (17). Planned line: 17 → 0 straight diagonal.
+    // Actual line: normalized fraction done across all keyMilestone groups × N.
+    // Weight = max(1, liveTaskCount) so milestones with no Firestore tasks still register.
+    const allPlanTasks = config.phases.flatMap((p) => p.tasks);
+    const N = allPlanTasks.length;  // dynamic — updates if PM adds/removes tasks
+    if (N === 0) return [];
+    const totalProjectDays = daysBetween(projectStart, projectEnd);
+
+    interface KmBucket {
+      liveTaskCount: number;
+      totalSubs: number;
+      approvedByDate: Record<string, number>;
+      isConfigDone: boolean;
+      configDoneDate: string;
+    }
+    const kmBuckets: Record<string, KmBucket> = {};
+    config.keyMilestones.forEach((km) => {
+      kmBuckets[km.title] = {
+        liveTaskCount: 0, totalSubs: 0, approvedByDate: {},
+        isConfigDone: km.status === "done", configDoneDate: km.date,
+      };
+    });
     tasks.forEach((task) => {
+      const key = task.milestone || "";
+      if (!kmBuckets[key]) return;
+      kmBuckets[key].liveTaskCount += 1;
       task.subtasks.forEach((sub) => {
+        kmBuckets[key].totalSubs += 1;
         if (isEffectivelyDone(task.id, sub) && sub.completedAt) {
           const d = sub.completedAt.slice(0, 10);
-          completionsByDate[d] = (completionsByDate[d] ?? 0) + 1;
+          kmBuckets[key].approvedByDate[d] = (kmBuckets[key].approvedByDate[d] ?? 0) + 1;
         }
       });
     });
+    const kmList = config.keyMilestones.map((km) => kmBuckets[km.title]);
+    const totalWeight = kmList.reduce((s, b) => s + Math.max(1, b.liveTaskCount), 0);
+    // allPlanTasks already declared above — used for tooltip active-task lookup
 
-    const today = new Date().toISOString().slice(0, 10);
+    const todayStr = new Date().toISOString().slice(0, 10);
     let startDate = projectStart;
     let endDate = projectEnd;
     let stepDays = 7;
@@ -332,36 +416,69 @@ export default function TimelinePage() {
     }
 
     const rangeDays = daysBetween(startDate, endDate);
-    const sortedDates = Object.keys(completionsByDate).sort();
-    const points: { label: string; date: string; planned: number; actual: number | null; projection: number | null }[] = [];
-    let lastKnownActual = totalPlannedTasks;
-    let lastKnownIdx = -1;
+    const points: {
+      label: string; date: string;
+      planned: number; actual: number | null; projection: number | null;
+      activePhases: string[]; activePlanTasks: string[];
+      nearbyMilestone: string | null; velocityPerWeek: number;
+    }[] = [];
+    let lastActualRemaining = N;
+    let lastActualIdx = -1;
 
     for (let i = 0; i <= rangeDays; i += stepDays) {
       const date = addDays(startDate, Math.min(i, rangeDays));
-      const dayFromStart = daysBetween(projectStart, date);
-      const totalProjectDays = daysBetween(projectStart, projectEnd);
-      const planned = Math.max(0, Math.round(totalPlannedTasks - (totalPlannedTasks * dayFromStart / totalProjectDays)));
 
-      let actualAtDate = totalPlannedTasks;
-      sortedDates.forEach((d) => { if (d <= date) actualAtDate -= completionsByDate[d]; });
-      actualAtDate = Math.max(0, actualAtDate);
+      // Planned: milestones whose deadline hasn’t passed yet = still “remaining”
+      // PLANNED: ideal straight-line burn N to 0
+      const elapsed = clamp(daysBetween(projectStart, date), 0, totalProjectDays);
+      const planned = Math.round((1 - elapsed / totalProjectDays) * N * 10) / 10;
+      const activePhases = config.phases.filter((p) => p.start <= date && p.end >= date).map((p) => p.title);
+      const activePlanTasks = allPlanTasks.filter((t) => t.start <= date && t.end >= date).map((t) => t.id + " - " + t.title);
+      const halfStep = Math.ceil(stepDays / 2);
+      const nearbyMilestone = config.keyMilestones.find((m) => Math.abs(daysBetween(m.date, date)) <= halfStep)?.title ?? null;
 
-      const isPast = date <= today;
+      const isPast = date <= todayStr;
       const label = burndownView === "full"
         ? formatDate(date, { month: "short", year: "numeric" })
         : formatDate(date, { day: "numeric", month: "short" });
 
-      if (isPast) { lastKnownActual = actualAtDate; lastKnownIdx = points.length; }
+      let actualRemaining: number | null = null;
+      let velocityPerWeek = 0;
+      if (isPast) {
+        let weightedRemaining = 0;
+        kmList.forEach((b) => {
+          const weight = Math.max(1, b.liveTaskCount);
+          let fractionDone = 0;
+          if (b.isConfigDone && date >= b.configDoneDate) {
+            fractionDone = 1;
+          } else if (b.totalSubs > 0) {
+            let approvedUpTo = 0;
+            Object.entries(b.approvedByDate).forEach(([d, cnt]) => {
+              if (d <= date) approvedUpTo += cnt;
+            });
+            fractionDone = Math.min(1, approvedUpTo / b.totalSubs);
+          }
+          weightedRemaining += (1 - fractionDone) * weight;
+        });
+        actualRemaining = Math.round((weightedRemaining / totalWeight) * N * 10) / 10;
+        const daysWorked2 = Math.max(1, daysBetween(projectStart, date));
+        velocityPerWeek = Math.round(((N - actualRemaining) / daysWorked2) * 7 * 10) / 10;
+        lastActualRemaining = actualRemaining;
+        lastActualIdx = points.length;
+      }
 
-      points.push({ label, date, planned, actual: isPast ? actualAtDate : null, projection: null });
+      points.push({ label, date, planned, actual: actualRemaining, projection: null,
+        activePhases, activePlanTasks, nearbyMilestone, velocityPerWeek });
     }
 
-    if (lastKnownIdx >= 0 && lastKnownIdx < points.length - 1) {
-      const remaining = points.length - 1 - lastKnownIdx;
-      const burnPerStep = remaining > 0 ? lastKnownActual / remaining : 0;
-      for (let j = lastKnownIdx; j < points.length; j++) {
-        points[j].projection = Math.max(0, Math.round(lastKnownActual - burnPerStep * (j - lastKnownIdx)));
+    // Linear projection from today’s actual count toward 0
+    if (lastActualIdx >= 0 && lastActualIdx < points.length - 1) {
+      const daysWorked = Math.max(1, daysBetween(projectStart, todayStr));
+      const burnedSoFar = N - lastActualRemaining;
+      const dailyVelocity = burnedSoFar / daysWorked;
+      for (let j = lastActualIdx; j < points.length; j++) {
+        const daysAhead = daysBetween(todayStr, points[j].date);
+        points[j].projection = Math.round(Math.max(0, lastActualRemaining - dailyVelocity * daysAhead) * 10) / 10;
       }
     }
 
@@ -369,51 +486,70 @@ export default function TimelinePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, reviews, config, burndownView]);
 
-  // ── Milestone progress from live tasks ───────────────────
+  // ── Milestone progress — ALL keyMilestones seeded, live tasks fill data ────
+  // Seeding ensures every config keyMilestone always appears in KPIs and Tab 3,
+  // even if no Firestore tasks have been assigned to it yet.
   const milestones = useMemo(() => {
-    return tasks.reduce<Record<string, { tasks: Task[]; done: number; total: number }>>(
-      (acc, t) => {
-        const key = t.milestone || "Uncategorized";
-        if (!acc[key]) acc[key] = { tasks: [], done: 0, total: 0 };
-        acc[key].tasks.push(t);
-        acc[key].total += t.subtasks.length;
-        acc[key].done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
-        return acc;
-      }, {}
-    );
+    // Seed with every keyMilestone from config (guaranteed baseline)
+    const acc: Record<string, { tasks: Task[]; done: number; total: number }> = {};
+    config.keyMilestones.forEach((km) => {
+      acc[km.title] = { tasks: [], done: 0, total: 0 };
+    });
+    // Fill in live Firestore task data
+    tasks.forEach((t) => {
+      const key = t.milestone || "Uncategorized";
+      if (!acc[key]) acc[key] = { tasks: [], done: 0, total: 0 };
+      acc[key].tasks.push(t);
+      acc[key].total += t.subtasks.length;
+      acc[key].done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
+    });
+    return acc;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, reviews]);
+  }, [tasks, reviews, config.keyMilestones]);
 
   // ── KPIs ─────────────────────────────────────────────────
-  const totalSubtasks = tasks.reduce((s, t) => s + t.subtasks.length, 0);
-  const doneSubtasks = tasks.reduce((s, t) => s + t.subtasks.filter((sub) => isEffectivelyDone(t.id, sub)).length, 0);
-  const overallPct = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0;
+  //
+  // overallPct: weighted by TASK COUNT per milestone group.
+  // A group with 4 tasks has 2× the weight of one with 2 tasks.
+  // Completion fraction per group = approved subtasks / total subtasks.
+  // overallPct = Σ(completion_i × taskCount_i) / Σ(taskCount_i) × 100
+  //
+  // scheduleProgress: based on phase plan deadlines — how many planned
+  // phase tasks (config.phases) should be done by today?
+  const milestoneEntries = Object.values(milestones);
+  const totalSubtasks = milestoneEntries.reduce((s, g) => s + g.total, 0);
+  const doneSubtasks  = milestoneEntries.reduce((s, g) => s + g.done,  0);
+
+  // Weighted overall progress:
+  //   weight  = max(1, taskCount)  — milestones with no live tasks still count
+  //   completion = 1 if config status=="done", else approvedSubs/totalSubs
+  const overallPct = (() => {
+    const entries = Object.entries(milestones);
+    if (entries.length === 0) return 0;
+    const totalW = entries.reduce((s, [, g]) => s + Math.max(1, g.tasks.length), 0);
+    const weighted = entries.reduce((sum, [key, g]) => {
+      const w = Math.max(1, g.tasks.length);
+      const isConfigDone = config.keyMilestones.find((m) => m.title === key)?.status === "done";
+      const completion = isConfigDone ? 1 : (g.total > 0 ? g.done / g.total : 0);
+      return sum + completion * w;
+    }, 0);
+    return Math.round((weighted / totalW) * 100);
+  })();
+
   const today = new Date().toISOString().slice(0, 10);
   const daysElapsed = Math.max(0, daysBetween(config.projectStart, today));
   const totalDays = daysBetween(config.projectStart, config.projectEnd);
   const timeElapsedPct = Math.min(100, Math.round((daysElapsed / totalDays) * 100));
   const daysLeft = Math.max(0, daysBetween(today, config.projectEnd));
 
-  // Schedule-based overall progress: each planned phase task counts equally (weight=1).
-  // Phases with more tasks have proportionally more weight — Phase 4's 8 tasks outweigh
-  // a 2-task phase 4:1. Past-deadline tasks contribute 100%, future tasks 0%.
+  // scheduleProgress: fraction of planned phase tasks whose deadline has passed
   const scheduleProgress = useMemo(() => {
-    const now = Date.now();
-    let totalTasks = 0;
-    let completedWeight = 0;
-    config.phases.forEach((phase) => {
-      phase.tasks.forEach((task) => {
-        const start = new Date(task.start).getTime();
-        const end = new Date(task.end).getTime();
-        const duration = Math.max(1, end - start);
-        const elapsed = clamp((now - start) / duration, 0, 1);
-        completedWeight += elapsed; // 1 per task, scaled by schedule completion
-        totalTasks += 1;
-      });
-    });
-    return totalTasks > 0 ? Math.round((completedWeight / totalTasks) * 100) : 0;
+    const allPlanTasks = config.phases.flatMap((p) => p.tasks);
+    if (allPlanTasks.length === 0) return timeElapsedPct;
+    const pastDeadlineCount = allPlanTasks.filter((t) => t.end < today).length;
+    return Math.round((pastDeadlineCount / allPlanTasks.length) * 100);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config]);
+  }, [config, today]);
 
   // Nuanced status: compare actual approved work vs scheduled completion
   const statusGap = scheduleProgress - overallPct;
@@ -487,17 +623,17 @@ export default function TimelinePage() {
             </div>
             <div>
               <p className="text-xs text-gray-400 font-medium">Overall Progress</p>
-              <p className="text-2xl font-bold text-gray-900 leading-tight">{scheduleProgress}%</p>
+              <p className="text-2xl font-bold text-gray-900 leading-tight">{overallPct}%</p>
             </div>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2">
             <div
               className="h-1.5 rounded-full bg-indigo-500 transition-all duration-700"
-              style={{ width: `${scheduleProgress}%` }}
+              style={{ width: `${overallPct}%` }}
             />
           </div>
           <p className="text-xs text-gray-400">
-            Schedule-based · {overallPct}% tasks approved ({doneSubtasks}/{totalSubtasks})
+            Milestone-based · {doneSubtasks}/{totalSubtasks} subtasks approved across {milestoneEntries.length} milestones
           </p>
         </div>
 
@@ -613,9 +749,9 @@ export default function TimelinePage() {
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
             <div className="flex items-center gap-6 mb-6 flex-wrap">
               {[
-                { color: "#6366f1", label: "Planned (Ideal)", dash: false },
-                { color: "#10b981", label: "Actual Burn", dash: false },
-                { color: "#f59e0b", label: "Projection", dash: true },
+                { color: "#6366f1", label: "Planned (Phase Schedule)", dash: false },
+                { color: "#10b981", label: "Actual (Approved Work)", dash: false },
+                { color: "#f59e0b", label: "Projected Burn", dash: true },
               ].map((l) => (
                 <div key={l.label} className="flex items-center gap-2">
                   <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke={l.color} strokeWidth="2.5" strokeDasharray={l.dash ? "4 3" : "0"} /></svg>
@@ -633,7 +769,8 @@ export default function TimelinePage() {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
                   <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false}
-                    label={{ value: "Remaining Tasks", angle: -90, position: "insideLeft", offset: 10, style: { fill: "#94a3b8", fontSize: 11 } }} />
+                    domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.05)]}
+                    label={{ value: "Tasks Remaining", angle: -90, position: "insideLeft", offset: 10, style: { fill: "#94a3b8", fontSize: 11 } }} />
                   <Tooltip content={<BurndownTooltip />} />
                   <ReferenceLine x={burndownData.find((d) => d.date === today)?.label}
                     stroke="#e11d48" strokeDasharray="4 3" strokeWidth={1.5}
