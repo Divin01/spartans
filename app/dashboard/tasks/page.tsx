@@ -15,8 +15,10 @@ import {
   markTaskAsRead,
   createActivityLog,
   getProjectConfig,
+  saveProjectConfig,
 } from "@/lib/firestore";
 import type { Task, User, Subtask, Review, ProjectConfig } from "@/lib/types";
+import { DEFAULT_CONFIG } from "@/lib/project-config";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Plus,
@@ -62,7 +64,13 @@ export default function TasksPage() {
     setTasks(t);
     setUsers(u);
     setReviews(r);
-    if (cfg) setProjectConfig(cfg);
+    if (cfg) {
+      setProjectConfig(cfg);
+    } else {
+      // Seed DEFAULT_CONFIG to Firestore on first visit (same as timeline page)
+      saveProjectConfig({ ...DEFAULT_CONFIG, updatedAt: new Date().toISOString(), updatedBy: "system" });
+      setProjectConfig(DEFAULT_CONFIG);
+    }
     setLoading(false);
   }
 
@@ -152,14 +160,40 @@ export default function TasksPage() {
     return acc;
   }, {});
 
-  // Progressive milestone suggestions from config phase tasks:
-  // show already-used phase task IDs (in plan order) + the next unassigned one.
+  // Progressive milestone suggestions:
+  // 1. Actual milestone strings from existing Firestore tasks, sorted in plan order.
+  //    Matching handles "4.1", "4.1 Title", "4.1. Title" and guards "4.1" vs "4.10".
+  // 2. Append the next plan task ID that has no existing task yet.
   const milestoneSuggestions = useMemo(() => {
-    const allPT = projectConfig?.phases.flatMap((p) => p.tasks) ?? [];
-    const usedIds = new Set(tasks.map((t) => t.milestone));
-    const used = allPT.filter((pt) => usedIds.has(pt.id));
-    const next = allPT.find((pt) => !usedIds.has(pt.id));
-    return [...used.map((pt) => pt.id), ...(next ? [next.id] : [])];
+    const cfg = projectConfig ?? DEFAULT_CONFIG;
+    const allPT = cfg.phases.flatMap((p) => p.tasks);
+
+    // Returns true if a stored milestone string belongs to a given plan task id
+    function matchesPt(m: string, ptId: string): boolean {
+      if (m === ptId) return true;
+      if (!m.startsWith(ptId)) return false;
+      const sep = m[ptId.length];
+      return sep === " " || sep === "." || sep === "-";
+    }
+
+    // Unique milestone strings actually stored in Firestore
+    const usedStrings = [...new Set(tasks.map((t) => t.milestone).filter(Boolean))];
+
+    // Sort them in plan order
+    const inPlanOrder: string[] = [];
+    const remaining = [...usedStrings];
+    allPT.forEach((pt) => {
+      const idx = remaining.findIndex((m) => matchesPt(m, pt.id));
+      if (idx !== -1) {
+        inPlanOrder.push(remaining[idx]);
+        remaining.splice(idx, 1);
+      }
+    });
+
+    // Next plan task not yet covered by any existing milestone string
+    const next = allPT.find((pt) => !usedStrings.some((m) => matchesPt(m, pt.id)));
+
+    return [...inPlanOrder, ...remaining, ...(next ? [`${next.id}. ${next.title}`] : [])];
   }, [tasks, projectConfig]);
 
   // Apply ownership filter

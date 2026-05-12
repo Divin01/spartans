@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { getTasks, getReviews, getProjectConfig, saveProjectConfig, updateTask } from "@/lib/firestore";
+import { DEFAULT_CONFIG } from "@/lib/project-config";
 import { useAuth } from "@/lib/auth-context";
 import type { Task, Review, ProjectConfig, Phase, PhaseTask, KeyMilestone } from "@/lib/types";
 import {
@@ -34,75 +35,6 @@ import {
 } from "lucide-react";
 
 // ── Default project config (from the plan) ───────────────
-const DEFAULT_CONFIG: ProjectConfig = {
-  projectStart: "2026-04-02",
-  projectEnd: "2026-10-15",
-  totalPlannedTasks: 32,
-  keyMilestones: [
-    { title: "Project Kick-off & Scope Sign-off", date: "2026-04-02", status: "done" },
-    { title: "Platform Development Start (Phase 4)", date: "2026-04-02", status: "active" },
-    { title: "Cloud Deployment Live (Phase 8.1)", date: "2026-05-15", status: "upcoming" },
-    { title: "Analytics & Reporting Complete (Phase 5)", date: "2026-06-01", status: "upcoming" },
-    { title: "System Testing Start (Phase 7)", date: "2026-08-01", status: "upcoming" },
-    { title: "UAT Completion", date: "2026-09-01", status: "upcoming" },
-    { title: "Documentation & Pitch Deck Final", date: "2026-10-14", status: "upcoming" },
-    { title: "INVESTOR PITCH", date: "2026-10-15", status: "target" },
-  ],
-  phases: [
-    {
-      id: "4",
-      title: "Phase 4: Platform Development",
-      start: "2026-04-03",
-      end: "2026-08-09",
-      tasks: [
-        { id: "4.1", title: "User Authentication & Access Control", start: "2026-04-03", end: "2026-04-13", owners: ["Daniel", "Emmanuel S.", "Natalie", "Emza"] },
-        { id: "4.2", title: "Event Management Module", start: "2026-04-03", end: "2026-04-27", owners: ["All Members"] },
-        { id: "4.3", title: "EMS Marketplace & Procurement", start: "2026-04-24", end: "2026-05-11", owners: ["All Members"] },
-        { id: "4.4", title: "Risk Prediction Engine (ML)", start: "2026-05-13", end: "2026-07-31", owners: ["Emmanuel S."] },
-        { id: "4.5", title: "Real-Time on-site Event Monitoring (Mobile)", start: "2026-05-17", end: "2026-07-20", owners: ["All Members"] },
-        { id: "4.6", title: "IOT Design Systems & Integration", start: "2026-05-25", end: "2026-07-20", owners: ["Daniel", "Divin"] },
-        { id: "4.7", title: "GIS & Event Simulation Module", start: "2026-07-21", end: "2026-07-31", owners: ["Natalie", "Daniel"] },
-        { id: "4.8", title: "Notification & Messaging System", start: "2026-07-21", end: "2026-08-09", owners: ["Divin"] },
-        { id: "4.9", title: "Compliance Management Module", start: "2026-07-21", end: "2026-07-31", owners: ["Emza"] },
-        { id: "4.10", title: "Payment & Financial System", start: "2026-07-21", end: "2026-07-31", owners: ["Emmanuel S."] },
-      ],
-    },
-    {
-      id: "5",
-      title: "Phase 5: Analytics & Reporting",
-      start: "2026-06-01",
-      end: "2026-07-31",
-      tasks: [
-        { id: "5.1", title: "Event Analytics Dashboard", start: "2026-06-01", end: "2026-07-31", owners: ["Emmanuel S."] },
-        { id: "5.2", title: "Post-Event Report Generation", start: "2026-06-01", end: "2026-07-31", owners: ["Emmanuel S."] },
-      ],
-    },
-    {
-      id: "7",
-      title: "Phase 7: System Testing",
-      start: "2026-08-01",
-      end: "2026-09-30",
-      tasks: [
-        { id: "7.1", title: "Unit & Integration Testing", start: "2026-08-01", end: "2026-08-31", owners: ["All Members"] },
-        { id: "7.2", title: "System, Security & Performance Testing", start: "2026-09-01", end: "2026-09-19", owners: ["All Members", "Stakeholders"] },
-        { id: "7.3", title: "User Acceptance Testing (UAT)", start: "2026-09-01", end: "2026-09-30", owners: ["All Members", "Stakeholders"] },
-      ],
-    },
-    {
-      id: "8",
-      title: "Phase 8: Deployment & Pitch Preparation",
-      start: "2026-05-15",
-      end: "2026-10-15",
-      tasks: [
-        { id: "8.1", title: "Cloud Deployment (Continuous)", start: "2026-05-15", end: "2026-10-01", owners: ["Divin", "Emmanuel S.", "Daniel"] },
-        { id: "8.2", title: "Documentation & Final Pitch Prep", start: "2026-08-24", end: "2026-10-15", owners: ["All Members"] },
-      ],
-    },
-  ],
-  updatedAt: new Date().toISOString(),
-  updatedBy: "system",
-};
-
 // ── Utility helpers ──────────────────────────────────────
 function daysBetween(a: string, b: string) {
   return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 86400000);
@@ -502,18 +434,29 @@ export default function TimelinePage() {
     const totalProjectDays = daysBetween(projectStart, projectEnd);
 
     // Phase-task buckets — keyed by pt.id (e.g. "4.1").
-    // task.milestone === pt.id links each Firestore task to its plan slot.
+    // task.milestone may be "4.1" or "4.1 User Authentication..."; match by prefix.
     interface PtBucket { totalSubs: number; approvedByDate: Record<string, number> }
     const ptBuckets: Record<string, PtBucket> = {};
     allPlanTasks.forEach((pt) => { ptBuckets[pt.id] = { totalSubs: 0, approvedByDate: {} }; });
+
+    // Helper: match "4.1", "4.1 Title", "4.1. Title" but NOT "4.10"
+    function resolvePtId(m: string): string | undefined {
+      return allPlanTasks.find((pt) => {
+        if (m === pt.id) return true;
+        if (!m.startsWith(pt.id)) return false;
+        const sep = m[pt.id.length];
+        return sep === " " || sep === "." || sep === "-";
+      })?.id;
+    }
+
     tasks.forEach((task) => {
-      const key = task.milestone || "";
-      if (!ptBuckets[key]) return;
+      const ptId = resolvePtId(task.milestone || "");
+      if (!ptId) return;
       task.subtasks.forEach((sub) => {
-        ptBuckets[key].totalSubs += 1;
+        ptBuckets[ptId].totalSubs += 1;
         if (isEffectivelyDone(task.id, sub) && sub.completedAt) {
           const d = sub.completedAt.slice(0, 10);
-          ptBuckets[key].approvedByDate[d] = (ptBuckets[key].approvedByDate[d] ?? 0) + 1;
+          ptBuckets[ptId].approvedByDate[d] = (ptBuckets[ptId].approvedByDate[d] ?? 0) + 1;
         }
       });
     });
@@ -659,7 +602,14 @@ export default function TimelinePage() {
     if (allPT.length === 0) return 0;
     let remaining = 0;
     allPT.forEach((pt) => {
-      const matching = tasks.filter((t) => t.milestone === pt.id);
+      // Match by exact id, "id title" (space), "id. title" (period), guard "4.1" vs "4.10"
+      const matching = tasks.filter((t) => {
+        const m = t.milestone ?? "";
+        if (m === pt.id) return true;
+        if (!m.startsWith(pt.id)) return false;
+        const sep = m[pt.id.length];
+        return sep === " " || sep === "." || sep === "-";
+      });
       if (matching.length === 0) {
         remaining += 1;
       } else {
