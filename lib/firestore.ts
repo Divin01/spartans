@@ -12,7 +12,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { db } from "@/firebase";
-import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails, ProjectConfig } from "./types";
+import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails, ProjectConfig, Expense } from "./types";
 
 // ── Users ───────────────────────────────────────────────
 export async function getUsers(): Promise<User[]> {
@@ -309,4 +309,33 @@ export async function getProjectConfig(): Promise<ProjectConfig | null> {
 
 export async function saveProjectConfig(config: ProjectConfig): Promise<void> {
   await setDoc(PROJECT_CONFIG_DOC, config);
+}
+
+// ── Expenses ─────────────────────────────────────────────────────────────────
+export async function getExpenses(): Promise<Expense[]> {
+  const snap = await getDocs(
+    query(collection(db, "expenses"), orderBy("submittedAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense));
+}
+
+export async function createExpense(
+  expense: Omit<Expense, "id">
+): Promise<string> {
+  const ref = await addDoc(collection(db, "expenses"), expense);
+  return ref.id;
+}
+
+export async function updateExpense(
+  id: string,
+  data: Partial<Expense>
+): Promise<void> {
+  const clean = Object.fromEntries(
+    Object.entries(data).filter(([, v]) => v !== undefined)
+  );
+  await updateDoc(doc(db, "expenses", id), clean);
+}
+
+export async function deleteExpense(id: string): Promise<void> {
+  await deleteDoc(doc(db, "expenses", id));
 }

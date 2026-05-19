@@ -11,8 +11,12 @@ import {
   getBankingDetails,
   setBankingDetails,
   setCashierPasskey,
+  getExpenses,
+  createExpense,
+  updateExpense,
+  deleteExpense,
 } from "@/lib/firestore";
-import type { Deposit, CashierSetting, BankingDetails } from "@/lib/types";
+import type { Deposit, CashierSetting, BankingDetails, Expense } from "@/lib/types";
 import {
   Loader2,
   Plus,
@@ -21,6 +25,7 @@ import {
   AlertTriangle,
   Clock,
   TrendingUp,
+  TrendingDown,
   Wallet,
   FileText,
   Upload,
@@ -32,6 +37,12 @@ import {
   CreditCard,
   Building2,
   KeyRound,
+  Tag,
+  ShoppingBag,
+  XCircle,
+  ReceiptText,
+  Banknote,
+  BarChart3,
 } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────
@@ -62,6 +73,53 @@ function StatusBadge({ status }: { status: Deposit["status"] }) {
     <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
       <Clock className="h-3 w-3" />
       Pending
+    </span>
+  );
+}
+
+// ── Expense constants ────────────────────────────────────
+const EXPENSE_CATEGORIES = [
+  "Infrastructure & Hosting",
+  "Development Tools",
+  "Marketing & Design",
+  "Legal & Administration",
+  "Operations",
+  "Hardware & Equipment",
+  "Event & Presentation",
+  "Miscellaneous",
+] as const;
+
+const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
+  "Infrastructure & Hosting":  { bg: "bg-blue-50",    text: "text-blue-700" },
+  "Development Tools":         { bg: "bg-purple-50",  text: "text-purple-700" },
+  "Marketing & Design":        { bg: "bg-pink-50",    text: "text-pink-700" },
+  "Legal & Administration":    { bg: "bg-amber-50",   text: "text-amber-700" },
+  "Operations":                { bg: "bg-slate-100",  text: "text-slate-700" },
+  "Hardware & Equipment":      { bg: "bg-cyan-50",    text: "text-cyan-700" },
+  "Event & Presentation":      { bg: "bg-rose-50",    text: "text-rose-700" },
+  "Miscellaneous":             { bg: "bg-gray-100",   text: "text-gray-600" },
+};
+
+// ── Expense Status Badge ─────────────────────────────────
+function ExpenseStatusBadge({ status }: { status: Expense["status"] }) {
+  if (status === "paid")
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-700">
+        <CheckCircle2 className="h-3 w-3" />
+        Paid
+      </span>
+    );
+  if (status === "declined")
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-600">
+        <XCircle className="h-3 w-3" />
+        Declined
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
+      <ShoppingBag className="h-3 w-3" />
+      Planned
     </span>
   );
 }
@@ -752,10 +810,633 @@ function DepositCard({
   );
 }
 
+// ── New Expense Modal ────────────────────────────────────
+function NewExpenseModal({
+  onClose,
+  onDone,
+  userName,
+  userId,
+}: {
+  onClose: () => void;
+  onDone: () => void;
+  userName: string;
+  userId: string;
+}) {
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
+  const [amount, setAmount] = useState("");
+  const [description, setDescription] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    const parsed = parseFloat(amount);
+    if (!title.trim()) { setError("Please enter a title."); return; }
+    if (!parsed || parsed <= 0) { setError("Please enter a valid amount."); return; }
+    setSaving(true);
+    try {
+      await createExpense({
+        title: title.trim(),
+        category,
+        amount: parsed,
+        description: description.trim() || null,
+        submittedBy: userId,
+        submittedByName: userName,
+        submittedAt: new Date().toISOString(),
+        status: "planned",
+        reviewedBy: null,
+        reviewedByName: null,
+        reviewedAt: null,
+        declineReason: null,
+        proofDocumentName: null,
+        proofDocumentPath: null,
+        paidAt: null,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      onClick={onClose}
+    >
+      <form
+        onSubmit={handleSubmit}
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Plan New Expense</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Submit an expense request for approval</p>
+          </div>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Domain registration fee"
+              autoFocus
+              required
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Category <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+            >
+              {EXPENSE_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Amount (ZAR) <span className="text-red-500">*</span>
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-gray-400 font-medium">R</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="0.00"
+                required
+                className="w-full pl-8 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Description <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Provide context or justification for this expense..."
+              rows={3}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 resize-none"
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{error}</p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-white border border-gray-200 transition"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={saving}
+            className="px-5 py-2.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 transition flex items-center gap-2 shadow-sm"
+          >
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            <ShoppingBag className="h-4 w-4" />
+            Submit Expense
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// ── Review Expense Modal ─────────────────────────────────
+function ReviewExpenseModal({
+  expense,
+  onClose,
+  onDone,
+  reviewerName,
+  reviewerId,
+}: {
+  expense: Expense;
+  onClose: () => void;
+  onDone: () => void;
+  reviewerName: string;
+  reviewerId: string;
+}) {
+  const [action, setAction] = useState<"approve" | "decline" | null>(null);
+  const [comment, setComment] = useState("");
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const catStyle = CATEGORY_COLORS[expense.category] ?? { bg: "bg-gray-100", text: "text-gray-600" };
+
+  async function handleApprove() {
+    setError("");
+    if (!proofFile) { setError("Please attach the payment proof or receipt before approving."); return; }
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", proofFile);
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      if (!res.ok) {
+        const json = await res.json();
+        throw new Error(json.error ?? "Upload failed");
+      }
+      const { path, name } = await res.json();
+      const now = new Date().toISOString();
+      await updateExpense(expense.id, {
+        status: "paid",
+        reviewedBy: reviewerId,
+        reviewedByName: reviewerName,
+        reviewedAt: now,
+        declineReason: null,
+        proofDocumentName: name,
+        proofDocumentPath: path,
+        paidAt: now,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve. Please try again.");
+      setSaving(false);
+    }
+  }
+
+  async function handleDecline() {
+    setError("");
+    if (!comment.trim()) { setError("Please provide a reason for declining."); return; }
+    setSaving(true);
+    try {
+      await updateExpense(expense.id, {
+        status: "declined",
+        reviewedBy: reviewerId,
+        reviewedByName: reviewerName,
+        reviewedAt: new Date().toISOString(),
+        declineReason: comment.trim(),
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to decline. Please try again.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="text-base font-semibold text-gray-900">Review Expense Request</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Submitted by {expense.submittedByName}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-5 max-h-[75vh] overflow-y-auto">
+          {/* Expense summary card */}
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl p-5 border border-gray-200 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <p className="font-bold text-gray-900 text-base">{expense.title}</p>
+                <span className={`inline-flex items-center gap-1.5 mt-2 text-xs font-medium px-2.5 py-1 rounded-full ${catStyle.bg} ${catStyle.text}`}>
+                  <Tag className="h-2.5 w-2.5" />
+                  {expense.category}
+                </span>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-2xl font-bold text-gray-900">{fmt(expense.amount)}</p>
+                <p className="text-xs text-gray-400 mt-0.5">Requested amount</p>
+              </div>
+            </div>
+            {expense.description && (
+              <p className="text-sm text-gray-600 pt-3 border-t border-gray-200 leading-relaxed">{expense.description}</p>
+            )}
+            <div className="flex items-center gap-4 pt-1 text-xs text-gray-400 border-t border-gray-200">
+              <span>Submitted {expense.submittedAt
+                ? new Date(expense.submittedAt).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric" })
+                : "—"}</span>
+            </div>
+          </div>
+
+          {/* Action selection */}
+          {!action && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Choose an action</p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setAction("approve")}
+                  className="group flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-green-100 bg-green-50 hover:border-green-400 hover:bg-green-100 transition"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-green-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-green-800">Approve & Pay</p>
+                    <p className="text-xs text-green-600 mt-0.5 leading-tight">Attach receipt · deducts from balance</p>
+                  </div>
+                </button>
+                <button
+                  onClick={() => setAction("decline")}
+                  className="group flex flex-col items-center gap-3 p-5 rounded-2xl border-2 border-red-100 bg-red-50 hover:border-red-400 hover:bg-red-100 transition"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <XCircle className="h-5 w-5" />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-red-800">Decline</p>
+                    <p className="text-xs text-red-600 mt-0.5 leading-tight">Reject with a reason</p>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Approve flow */}
+          {action === "approve" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+                <button
+                  onClick={() => { setAction(null); setError(""); setProofFile(null); }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Go back"
+                >
+                  <ChevronDown className="h-4 w-4 rotate-90" />
+                </button>
+                <div className="w-6 h-6 rounded-full bg-green-600 flex items-center justify-center">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-800">Approve &amp; Mark as Paid</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Payment Proof / Receipt <span className="text-red-500">*</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-2.5">
+                  Attach the bank receipt, invoice, or proof confirming the payment was made.
+                </p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                  className="hidden"
+                  onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
+                />
+                {proofFile ? (
+                  <div className="flex items-center gap-3 p-3.5 bg-green-50 border border-green-200 rounded-xl">
+                    <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-white" />
+                    </div>
+                    <span className="text-sm text-green-800 font-medium truncate flex-1">{proofFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setProofFile(null); if (fileRef.current) fileRef.current.value = ""; }}
+                      className="text-green-400 hover:text-green-700 transition"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="w-full flex flex-col items-center gap-2 p-5 border-2 border-dashed border-gray-200 rounded-xl hover:border-green-300 hover:bg-green-50 transition text-gray-400 hover:text-green-600 group"
+                  >
+                    <Upload className="h-6 w-6 group-hover:scale-110 transition-transform" />
+                    <span className="text-sm font-medium">Click to attach receipt or proof</span>
+                    <span className="text-xs">PDF, image, or Word — max 10 MB</span>
+                  </button>
+                )}
+              </div>
+
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {error}
+                </p>
+              )}
+
+              <button
+                onClick={handleApprove}
+                disabled={saving || !proofFile}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition shadow-sm"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Approve &amp; Mark as Paid
+              </button>
+            </div>
+          )}
+
+          {/* Decline flow */}
+          {action === "decline" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-gray-100">
+                <button
+                  onClick={() => { setAction(null); setError(""); setComment(""); }}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                  title="Go back"
+                >
+                  <ChevronDown className="h-4 w-4 rotate-90" />
+                </button>
+                <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center">
+                  <XCircle className="h-3.5 w-3.5 text-white" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-800">Decline this expense</h3>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Reason for declining <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="Explain why this expense is being declined so the requester understands..."
+                  rows={4}
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2.5 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {error}
+                </p>
+              )}
+
+              <button
+                onClick={handleDecline}
+                disabled={saving || !comment.trim()}
+                className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 transition shadow-sm"
+              >
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                Decline Expense
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Expense Card ─────────────────────────────────────────
+function ExpenseCard({
+  expense,
+  canReview,
+  canDelete,
+  onReview,
+  onDelete,
+}: {
+  expense: Expense;
+  canReview: boolean;
+  canDelete: boolean;
+  onReview: (e: Expense) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const catStyle = CATEGORY_COLORS[expense.category] ?? { bg: "bg-gray-100", text: "text-gray-600" };
+
+  const borderColor =
+    expense.status === "paid" ? "border-green-200" :
+    expense.status === "declined" ? "border-red-200" :
+    "border-amber-200";
+
+  const topGradient =
+    expense.status === "paid" ? "from-green-500 to-emerald-400" :
+    expense.status === "declined" ? "from-red-500 to-rose-400" :
+    "from-amber-400 to-orange-400";
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteExpense(expense.id);
+      onDelete(expense.id);
+    } catch {
+      setDeleting(false);
+      setConfirmDelete(false);
+    }
+  }
+
+  return (
+    <div className={`bg-white border rounded-2xl overflow-hidden transition-shadow hover:shadow-md ${borderColor}`}>
+      {/* Thin color accent */}
+      <div className={`h-0.5 bg-gradient-to-r ${topGradient}`} />
+
+      <div className="px-5 py-4 space-y-3">
+        {/* Decline reason banner */}
+        {expense.status === "declined" && expense.declineReason && (
+          <div className="flex items-start gap-2.5 p-3 bg-red-50 border border-red-100 rounded-xl">
+            <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700 leading-relaxed">{expense.declineReason}</p>
+          </div>
+        )}
+
+        {/* Category + status row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${catStyle.bg} ${catStyle.text}`}>
+            <Tag className="h-2.5 w-2.5" />
+            {expense.category}
+          </span>
+          <ExpenseStatusBadge status={expense.status} />
+        </div>
+
+        {/* Title + amount */}
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-sm font-semibold text-gray-900 leading-snug flex-1">{expense.title}</p>
+          <div className="shrink-0 flex items-center gap-2">
+            <p className="text-lg font-bold text-gray-900">{fmt(expense.amount)}</p>
+            {canDelete && expense.status === "planned" && !confirmDelete && (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                title="Delete expense"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Submitter + date */}
+        <p className="text-xs text-gray-400">
+          Submitted by <span className="font-medium text-gray-600">{expense.submittedByName}</span>
+          {expense.submittedAt && (
+            <> · {new Date(expense.submittedAt).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}</>
+          )}
+        </p>
+
+        {/* Description */}
+        {expense.description && (
+          <p className="text-sm text-gray-500 leading-relaxed">{expense.description}</p>
+        )}
+
+        {/* Inline delete confirmation */}
+        {confirmDelete && (
+          <div className="flex items-center justify-between gap-2 p-2.5 bg-red-50 border border-red-100 rounded-xl">
+            <span className="text-xs text-red-700 font-medium">Delete this expense?</span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition"
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Expandable details */}
+      <div className="px-5 pb-4">
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-gray-600 transition"
+        >
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+          {expanded ? "Hide details" : "Show details"}
+        </button>
+
+        {expanded && (
+          <div className="mt-3 space-y-2.5">
+            {expense.status === "paid" && (
+              expense.proofDocumentPath ? (
+                <a
+                  href={expense.proofDocumentPath}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2.5 p-2.5 bg-green-50 border border-green-200 rounded-xl hover:border-green-300 transition"
+                >
+                  <ReceiptText className="h-4 w-4 text-green-600 shrink-0" />
+                  <span className="text-xs text-green-700 font-medium truncate flex-1">
+                    {expense.proofDocumentName || "View payment proof"}
+                  </span>
+                  <ExternalLink className="h-3 w-3 text-green-500 shrink-0" />
+                </a>
+              ) : (
+                <div className="flex items-center gap-2.5 p-2.5 bg-gray-50 border border-gray-200 rounded-xl">
+                  <ReceiptText className="h-4 w-4 text-gray-400 shrink-0" />
+                  <span className="text-xs text-gray-400">No receipt attached</span>
+                </div>
+              )
+            )}
+            {expense.reviewedByName && expense.status !== "planned" && (
+              <p className="text-xs text-gray-400">
+                {expense.status === "paid" ? "Approved" : "Declined"} by{" "}
+                <span className="font-medium text-gray-600">{expense.reviewedByName}</span>
+                {expense.reviewedAt && (
+                  <> · {new Date(expense.reviewedAt).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}</>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Review action (for reviewer only) */}
+      {canReview && expense.status === "planned" && (
+        <div className="px-5 pb-4">
+          <button
+            onClick={() => onReview(expense)}
+            className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-orange-600 hover:text-orange-700 py-2.5 rounded-xl hover:bg-orange-50 border border-orange-100 hover:border-orange-200 transition"
+          >
+            <ReceiptText className="h-3.5 w-3.5" />
+            Review this expense
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────
 export default function FinancePage() {
   const { user } = useAuth();
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [cashier, setCashierState] = useState<CashierSetting | null>(null);
   const [banking, setBanking] = useState<BankingDetails>({
     accountHolder: "Natalie Khensani Mashele",
@@ -763,15 +1444,27 @@ export default function FinancePage() {
     bankName: "Nedbank",
   });
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"deposits" | "breakdown">("deposits");
+  const [tab, setTab] = useState<"deposits" | "breakdown" | "expenses">("deposits");
   const [showNew, setShowNew] = useState(false);
+  const [showNewExpense, setShowNewExpense] = useState(false);
   const [showEditBanking, setShowEditBanking] = useState(false);
   const [showChangePasskey, setShowChangePasskey] = useState(false);
   const [reviewDeposit, setReviewDeposit] = useState<Deposit | null>(null);
+  const [reviewExpense, setReviewExpense] = useState<Expense | null>(null);
   const [filterUser, setFilterUser] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [expenseFilterCat, setExpenseFilterCat] = useState<string>("all");
+  const [expenseFilterStatus, setExpenseFilterStatus] = useState<string>("all");
 
   const isCashier = !!cashier && cashier.userId === user?.id;
+  const isManager = user?.role === "manager";
+
+  // Determine if current user can review a given expense
+  function canReviewExpense(e: Expense): boolean {
+    if (e.submittedBy === user?.id) return false; // cannot review own expense
+    if (e.submittedBy === cashier?.userId) return isManager; // cashier submitted → PM reviews
+    return isCashier; // anyone else submitted → cashier reviews
+  }
 
   async function saveBanking(details: BankingDetails) {
     await setBankingDetails(details);
@@ -781,10 +1474,13 @@ export default function FinancePage() {
 
   async function load() {
     try {
-      const [deps, cas, bank] = await Promise.all([getDeposits(), getCashier(), getBankingDetails()]);
+      const [deps, cas, bank, exps] = await Promise.all([
+        getDeposits(), getCashier(), getBankingDetails(), getExpenses(),
+      ]);
       setDeposits(deps);
       setCashierState(cas);
       setBanking(bank);
+      setExpenses(exps);
     } catch (err) {
       console.error("Failed to load finance data:", err);
     } finally {
@@ -801,6 +1497,15 @@ export default function FinancePage() {
     .filter((d) => d.status === "pending")
     .reduce((s, d) => s + d.amount, 0);
 
+  // ── Expense stats ──
+  const paidExpenses = expenses.filter((e) => e.status === "paid");
+  const plannedExpenses = expenses.filter((e) => e.status === "planned");
+  const totalExpended = paidExpenses.reduce((s, e) => s + e.amount, 0);
+  const plannedTotal = plannedExpenses.reduce((s, e) => s + e.amount, 0);
+  const availableBalance = totalBudget - totalExpended;
+
+  const pendingExpenseCount = plannedExpenses.filter((e) => canReviewExpense(e)).length;
+
   // Unique members who have deposited
   const memberIds = [...new Set(deposits.map((d) => d.userId))];
 
@@ -812,10 +1517,17 @@ export default function FinancePage() {
     return { id, name, total, count };
   }).sort((a, b) => b.total - a.total);
 
-  // Filter
+  // Filter deposits
   const filtered = deposits.filter((d) => {
     if (filterUser !== "all" && d.userId !== filterUser) return false;
     if (filterStatus !== "all" && d.status !== filterStatus) return false;
+    return true;
+  });
+
+  // Filter expenses
+  const filteredExpenses = expenses.filter((e) => {
+    if (expenseFilterCat !== "all" && e.category !== expenseFilterCat) return false;
+    if (expenseFilterStatus !== "all" && e.status !== expenseFilterStatus) return false;
     return true;
   });
 
@@ -832,25 +1544,38 @@ export default function FinancePage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Finance & Budget</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Finance &amp; Budget</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Monthly contributions and project budget overview
+            Contributions, expenses, and project budget overview
           </p>
         </div>
-        <button
-          onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition shadow-sm shrink-0"
-        >
-          <Plus className="h-4 w-4" />
-          New Deposit
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === "expenses" && (isManager || isCashier) && (
+            <button
+              onClick={() => setShowNewExpense(true)}
+              className="flex items-center gap-2 bg-orange-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-orange-700 transition shadow-sm shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              New Expense
+            </button>
+          )}
+          {tab === "deposits" && (
+            <button
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-indigo-700 transition shadow-sm shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              New Deposit
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Cashier notice */}
       {cashier ? (
-        <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm">
+        <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 text-sm flex-wrap">
           <Wallet className="h-4 w-4 text-indigo-600 shrink-0" />
           <span className="text-indigo-700">
             Cashier: <strong>{cashier.userName}</strong>
@@ -872,7 +1597,12 @@ export default function FinancePage() {
           )}
           {isCashier && pendingCashierReview.length > 0 && (
             <span className={`${!isCashier ? "ml-auto" : ""} text-xs font-semibold bg-amber-500 text-white px-2.5 py-1 rounded-full`}>
-              {pendingCashierReview.length} pending review{pendingCashierReview.length > 1 ? "s" : ""}
+              {pendingCashierReview.length} deposit{pendingCashierReview.length > 1 ? "s" : ""} pending
+            </span>
+          )}
+          {pendingExpenseCount > 0 && (
+            <span className="text-xs font-semibold bg-orange-500 text-white px-2.5 py-1 rounded-full">
+              {pendingExpenseCount} expense{pendingExpenseCount > 1 ? "s" : ""} to review
             </span>
           )}
         </div>
@@ -900,6 +1630,19 @@ export default function FinancePage() {
           }`}
         >
           Contribution Breakdown
+        </button>
+        <button
+          onClick={() => setTab("expenses")}
+          className={`relative px-5 py-2 rounded-lg transition font-medium ${
+            tab === "expenses" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Expenses
+          {pendingExpenseCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center">
+              {pendingExpenseCount > 9 ? "9+" : pendingExpenseCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1095,6 +1838,208 @@ export default function FinancePage() {
         </div>
       )}
 
+      {/* ── Expenses Tab ── */}
+      {tab === "expenses" && (
+        <div className="space-y-6">
+          {/* Balance summary cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Available Balance — most prominent */}
+            <div className={`col-span-2 lg:col-span-1 rounded-2xl p-5 text-white ${
+              availableBalance <= 0
+                ? "bg-gradient-to-br from-red-600 to-red-700"
+                : availableBalance < totalBudget * 0.2
+                ? "bg-gradient-to-br from-amber-500 to-orange-600"
+                : "bg-gradient-to-br from-emerald-600 to-green-700"
+            }`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Banknote className="h-4 w-4 opacity-80" />
+                <p className="text-sm font-medium opacity-80">Available Balance</p>
+              </div>
+              <p className="text-3xl font-bold">{fmt(availableBalance)}</p>
+              <p className="text-xs opacity-70 mt-1">
+                {availableBalance <= 0 ? "Budget exhausted" : `${totalBudget > 0 ? Math.round((availableBalance / totalBudget) * 100) : 0}% of total income`}
+              </p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp className="h-4 w-4 text-indigo-500" />
+                <p className="text-sm font-medium text-gray-600">Total Income</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{fmt(totalBudget)}</p>
+              <p className="text-xs text-gray-400 mt-1">{approvedDeposits.length} approved deposit{approvedDeposits.length !== 1 ? "s" : ""}</p>
+            </div>
+
+            <div className="bg-white border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingDown className="h-4 w-4 text-green-600" />
+                <p className="text-sm font-medium text-gray-600">Total Spent</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{fmt(totalExpended)}</p>
+              <p className="text-xs text-gray-400 mt-1">{paidExpenses.length} paid expense{paidExpenses.length !== 1 ? "s" : ""}</p>
+            </div>
+
+            <div className="bg-white border border-amber-100 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <ShoppingBag className="h-4 w-4 text-amber-500" />
+                <p className="text-sm font-medium text-gray-600">Planned</p>
+              </div>
+              <p className="text-2xl font-bold text-gray-900">{fmt(plannedTotal)}</p>
+              <p className="text-xs text-gray-400 mt-1">{plannedExpenses.length} awaiting approval</p>
+            </div>
+          </div>
+
+          {/* Budget bar visualisation */}
+          {totalBudget > 0 && (
+            <div className="bg-white border border-gray-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-gray-400" />
+                  Budget Utilisation
+                </h3>
+                <span className="text-xs text-gray-400">
+                  {fmt(totalExpended + plannedTotal)} committed of {fmt(totalBudget)}
+                </span>
+              </div>
+              <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+                <div className="h-full flex rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-green-500 to-emerald-400 transition-all"
+                    style={{ width: `${Math.min((totalExpended / totalBudget) * 100, 100)}%` }}
+                  />
+                  <div
+                    className="bg-gradient-to-r from-amber-400 to-orange-400 transition-all"
+                    style={{ width: `${Math.min((plannedTotal / totalBudget) * 100, 100 - (totalExpended / totalBudget) * 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-5 mt-2.5">
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
+                  Spent {fmt(totalExpended)}
+                </span>
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+                  Planned {fmt(plannedTotal)}
+                </span>
+                <span className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className="w-2.5 h-2.5 rounded-full bg-gray-200 inline-block" />
+                  Available {fmt(availableBalance)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Expense list */}
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                <ReceiptText className="h-4 w-4 text-gray-400" />
+                All Expenses ({expenses.length})
+              </h2>
+              <div className="flex gap-2 flex-wrap">
+                <select
+                  value={expenseFilterCat}
+                  onChange={(e) => setExpenseFilterCat(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="all">All Categories</option>
+                  {EXPENSE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+                <select
+                  value={expenseFilterStatus}
+                  onChange={(e) => setExpenseFilterStatus(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="all">All Status</option>
+                  <option value="planned">Planned</option>
+                  <option value="paid">Paid</option>
+                  <option value="declined">Declined</option>
+                </select>
+              </div>
+            </div>
+
+            {filteredExpenses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-white border border-gray-200 rounded-2xl">
+                <div className="w-14 h-14 rounded-2xl bg-orange-50 flex items-center justify-center mb-4">
+                  <ReceiptText className="h-7 w-7 text-orange-200" />
+                </div>
+                <p className="text-gray-500 font-medium">No expenses yet</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  {expenseFilterCat !== "all" || expenseFilterStatus !== "all"
+                    ? "Try adjusting the filters"
+                    : (isManager || isCashier)
+                    ? "Plan your first expense using the button above"
+                    : "Expenses submitted by the team will appear here"}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredExpenses.map((e) => (
+                  <ExpenseCard
+                    key={e.id}
+                    expense={e}
+                    canReview={canReviewExpense(e)}
+                    canDelete={e.submittedBy === user?.id}
+                    onReview={setReviewExpense}
+                    onDelete={(id) => setExpenses((prev) => prev.filter((x) => x.id !== id))}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Records summary for paid expenses */}
+            {paidExpenses.length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-gray-800">Payment History</h3>
+                  <span className="text-xs text-gray-400">{paidExpenses.length} completed payment{paidExpenses.length !== 1 ? "s" : ""}</span>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {paidExpenses.map((e) => {
+                    const catStyle = CATEGORY_COLORS[e.category] ?? { bg: "bg-gray-100", text: "text-gray-600" };
+                    return (
+                      <div key={e.id} className="px-5 py-3.5 flex items-center gap-4">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${catStyle.bg}`}>
+                          <ReceiptText className={`h-4 w-4 ${catStyle.text}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">{e.title}</p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {e.category}
+                            {e.paidAt && <> · {new Date(e.paidAt).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}</>}
+                            {e.reviewedByName && <> · Approved by {e.reviewedByName}</>}
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-sm font-bold text-gray-900">{fmt(e.amount)}</p>
+                          {e.proofDocumentPath && (
+                            <a
+                              href={e.proofDocumentPath}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-indigo-500 hover:text-indigo-700 transition flex items-center gap-1 justify-end mt-0.5"
+                            >
+                              <ExternalLink className="h-2.5 w-2.5" /> Receipt
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="px-5 py-3.5 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-gray-700">Total Spent</span>
+                  <span className="text-base font-bold text-red-600">− {fmt(totalExpended)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Modals */}
       {showNew && user && (
         <NewDepositModal
@@ -1130,6 +2075,25 @@ export default function FinancePage() {
             await setCashierPasskey(key);
             setShowChangePasskey(false);
           }}
+        />
+      )}
+
+      {showNewExpense && user && (
+        <NewExpenseModal
+          onClose={() => setShowNewExpense(false)}
+          onDone={async () => { setShowNewExpense(false); await load(); }}
+          userName={user.name}
+          userId={user.id}
+        />
+      )}
+
+      {reviewExpense && user && (
+        <ReviewExpenseModal
+          expense={reviewExpense}
+          onClose={() => setReviewExpense(null)}
+          onDone={async () => { setReviewExpense(null); await load(); }}
+          reviewerName={user.name}
+          reviewerId={user.id}
         />
       )}
     </div>

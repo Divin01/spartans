@@ -95,6 +95,25 @@ export interface BankingDetails {
   bankName: string;
 }
 
+export interface Expense {
+  id: string;
+  title: string;
+  category: string;
+  amount: number;
+  description?: string | null;
+  submittedBy: string;
+  submittedByName: string;
+  submittedAt: string;
+  status: "planned" | "paid" | "declined";
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  declineReason?: string | null;
+  proofDocumentName?: string | null;
+  proofDocumentPath?: string | null;
+  paidAt?: string | null;
+}
+
 // ── Project / Timeline ───────────────────────────────────
 export interface PhaseTask {
   id: string;          // e.g. "4.1"
