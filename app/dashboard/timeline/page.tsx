@@ -945,8 +945,8 @@ export default function TimelinePage() {
                   {formatDate(config.projectStart, { month: "short", year: "numeric" })} → {formatDate(config.projectEnd, { month: "short", year: "numeric" })}
                 </p>
 
-                {/* Month axis */}
-                <div className="relative mb-3 h-5">
+                {/* Month axis — constrained to the bar track column only */}
+                <div className="relative mb-3 h-5" style={{ marginLeft: "calc(6rem + 0.75rem)", marginRight: "calc(9rem + 0.75rem)" }}>
                   {(() => {
                     const months: { label: string; pct: number }[] = [];
                     const end = new Date(config.projectEnd);
@@ -963,9 +963,9 @@ export default function TimelinePage() {
 
                 {/* Phase bars + task rows */}
                 <div className="relative min-w-[600px]">
-                  {/* Today line */}
-                  <div className="absolute top-0 bottom-0 z-10 pointer-events-none" style={{ left: `${todayPct}%` }}>
-                    <div className="w-px h-full bg-red-400 opacity-50" />
+                  {/* Today line — constrained to bar track column so it aligns with phase/task bars */}
+                  <div className="absolute top-0 bottom-0 z-10 pointer-events-none" style={{ left: "calc(6rem + 0.75rem)", right: "calc(9rem + 0.75rem)" }}>
+                    <div className="absolute top-0 bottom-0 w-px bg-red-400 opacity-50" style={{ left: `${todayPct}%` }} />
                   </div>
 
                   <div className="space-y-5">
@@ -990,8 +990,8 @@ export default function TimelinePage() {
                             </span>
                           </div>
 
-                          {/* Task rows */}
-                          <div className="space-y-0.5 pl-[7.5rem] pr-[9.5rem]">
+                          {/* Task rows — padding matches track column: w-24+gap-3 left, w-36+gap-3 right */}
+                          <div className="space-y-0.5" style={{ paddingLeft: "calc(6rem + 0.75rem)", paddingRight: "calc(9rem + 0.75rem)" }}>
                             {phase.tasks.map((task) => {
                               const tLeft = clamp(((new Date(task.start).getTime() - projectStartMs) / totalMs) * 100, 0, 100);
                               const tWidth = clamp(((new Date(task.end).getTime() - new Date(task.start).getTime()) / totalMs) * 100, 0.5, 100 - tLeft);
@@ -1021,8 +1021,8 @@ export default function TimelinePage() {
                       );
                     })}
 
-                    {/* Milestone markers */}
-                    <div className="relative h-8 border-t border-gray-100 pt-2">
+                    {/* Milestone markers — constrained to bar track column */}
+                    <div className="relative h-8 border-t border-gray-100 pt-2" style={{ marginLeft: "calc(6rem + 0.75rem)", marginRight: "calc(9rem + 0.75rem)" }}>
                       {config.keyMilestones.map((m) => {
                         const mPct = clamp(((new Date(m.date).getTime() - projectStartMs) / totalMs) * 100, 0, 100);
                         return (
