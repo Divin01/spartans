@@ -827,35 +827,38 @@ export default function TimelinePage() {
       {/* ══════════════════ TAB 1: BURNDOWN ══════════════════ */}
       {tab === "burndown" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-gray-800">Burndown Analysis</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Tasks remaining from plan — planned ideal vs. actual approvals vs. velocity projection</p>
-            </div>
-            <div className="flex gap-1 bg-gray-100 rounded-xl p-1">
-              {(["full", "month", "week"] as const).map((v) => (
-                <button key={v} onClick={() => setBurndownView(v)}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${burndownView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-                  {v === "full" ? "Full Project" : v === "month" ? "This Month" : "This Week"}
-                </button>
-              ))}
-            </div>
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">Burndown Analysis</h2>
+            <p className="text-xs text-gray-400 mt-0.5">Tasks remaining from plan — planned ideal vs. actual approvals vs. velocity projection</p>
           </div>
 
           {/* Chart */}
           <div className="bg-white rounded-2xl border border-gray-200 p-6">
-            <div className="flex items-center gap-6 mb-6 flex-wrap">
-              {[
-                { color: "#6366f1", label: "Planned (Phase Schedule)", dash: false },
-                { color: "#10b981", label: "Actual (Approved Work)", dash: false },
-                { color: "#f59e0b", label: "Projected Burn", dash: true },
-              ].map((l) => (
-                <div key={l.label} className="flex items-center gap-2">
-                  <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke={l.color} strokeWidth="2.5" strokeDasharray={l.dash ? "4 3" : "0"} /></svg>
-                  <span className="text-xs text-gray-500">{l.label}</span>
+            {/* Filter + legend row */}
+            <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
+              <div className="space-y-3">
+                <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+                  {(["full", "month", "week"] as const).map((v) => (
+                    <button key={v} onClick={() => setBurndownView(v)}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${burndownView === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                      {v === "full" ? "Full Project" : v === "month" ? "This Month" : "This Week"}
+                    </button>
+                  ))}
                 </div>
-              ))}
-              <span className="ml-auto text-xs text-gray-400">Auto-updates as tasks are approved</span>
+                <div className="flex items-center gap-5 flex-wrap">
+                  {[
+                    { color: "#6366f1", label: "Planned (Phase Schedule)", dash: false },
+                    { color: "#10b981", label: "Actual (Approved Work)", dash: false },
+                    { color: "#f59e0b", label: "Projected Burn", dash: true },
+                  ].map((l) => (
+                    <div key={l.label} className="flex items-center gap-2">
+                      <svg width="24" height="3"><line x1="0" y1="1.5" x2="24" y2="1.5" stroke={l.color} strokeWidth="2.5" strokeDasharray={l.dash ? "4 3" : "0"} /></svg>
+                      <span className="text-xs text-gray-500">{l.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <span className="text-xs text-gray-400 pt-1">Auto-updates as tasks are approved</span>
             </div>
 
             {burndownData.length === 0 ? (
@@ -869,7 +872,7 @@ export default function TimelinePage() {
                     domain={[0, (dataMax: number) => Math.ceil(dataMax * 1.05)]}
                     label={{ value: "Tasks Remaining", angle: -90, position: "insideLeft", offset: 10, style: { fill: "#94a3b8", fontSize: 11 } }} />
                   <Tooltip content={<BurndownTooltip />} />
-                  <ReferenceLine x={burndownData.find((d) => d.date === today)?.label}
+                  <ReferenceLine x={burndownData.find((d) => d.date >= today)?.label}
                     stroke="#e11d48" strokeDasharray="4 3" strokeWidth={1.5}
                     label={{ value: "Today", position: "top", fill: "#e11d48", fontSize: 10 }} />
                   {config.keyMilestones.filter((m) => m.status === "target" || m.status === "active").slice(0, 3).map((m) => {
