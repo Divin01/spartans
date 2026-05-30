@@ -191,11 +191,9 @@ function NewDepositModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -345,11 +343,9 @@ function ReviewModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
     >
       <div
         className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
@@ -473,11 +469,9 @@ function ChangePasskeyModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -561,11 +555,9 @@ function EditBankingModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
     >
       <form
         onSubmit={handleSave}
-        onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -868,7 +860,6 @@ function NewExpenseModal({
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
@@ -1047,11 +1038,9 @@ function ReviewExpenseModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6"
-      onClick={onClose}
     >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">

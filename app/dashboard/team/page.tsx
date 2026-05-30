@@ -540,11 +540,9 @@ function AddUserModal({ onClose, onDone }: { onClose: () => void; onDone: () => 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-      onClick={onClose}
     >
       <form
         onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
         className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
