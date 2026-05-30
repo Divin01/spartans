@@ -376,26 +376,57 @@ export default function TasksPage() {
               now.setHours(0, 0, 0, 0);
               const due = new Date(task.dueDate);
               due.setHours(0, 0, 0, 0);
-              const diff = Math.ceil(
+              const diffFromNow = Math.ceil(
                 (due.getTime() - now.getTime()) / 86400000
               );
-              const isOverdue = diff < 0;
-              const label =
-                diff === 0
-                  ? "Due today"
-                  : isOverdue
-                  ? `${Math.abs(diff)}d overdue`
-                  : `${diff}d left`;
+
+              const isTaskDone = total > 0 && done === total;
+
+              let label: string;
+              let colorClass: string;
+
+              if (isTaskDone) {
+                // Derive task completion date from the latest subtask completedAt
+                const completionTimestamps = task.subtasks
+                  .filter((s) => s.completed && s.completedAt)
+                  .map((s) => new Date(s.completedAt!).getTime());
+
+                if (completionTimestamps.length === 0) {
+                  // Legacy tasks completed before date tracking — just show green
+                  label = "completed";
+                  colorClass = "text-green-600";
+                } else {
+                  const completedDay = new Date(Math.max(...completionTimestamps));
+                  completedDay.setHours(0, 0, 0, 0);
+                  const daysLate = Math.ceil(
+                    (completedDay.getTime() - due.getTime()) / 86400000
+                  );
+                  if (daysLate > 0) {
+                    label = `${daysLate}d late`;
+                    colorClass = "text-red-500";
+                  } else {
+                    label = daysLate === 0 ? "on time" : `${Math.abs(daysLate)}d early`;
+                    colorClass = "text-green-600";
+                  }
+                }
+              } else {
+                // Not completed yet
+                const isOverdue = diffFromNow < 0;
+                label =
+                  diffFromNow === 0
+                    ? "due today"
+                    : isOverdue
+                    ? `${Math.abs(diffFromNow)}d overdue`
+                    : `${diffFromNow}d left`;
+                colorClass = isOverdue
+                  ? "text-red-500"
+                  : diffFromNow <= 3
+                  ? "text-amber-500"
+                  : "text-gray-400";
+              }
+
               return (
-                <span
-                  className={`flex items-center gap-1 font-medium ${
-                    isOverdue
-                      ? "text-red-500"
-                      : diff <= 3
-                      ? "text-amber-500"
-                      : "text-gray-400"
-                  }`}
-                >
+                <span className={`flex items-center gap-1 font-medium ${colorClass}`}>
                   <Calendar className="h-3 w-3" />
                   {new Date(task.dueDate).toLocaleDateString(
                     "en-US",
