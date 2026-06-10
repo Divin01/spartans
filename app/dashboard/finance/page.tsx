@@ -100,6 +100,13 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   "Miscellaneous":             { bg: "bg-gray-100",   text: "text-gray-600" },
 };
 
+const isSupportedProofImage = (file: File) => {
+  return (
+    file.type.startsWith("image/") ||
+    /\.(jpe?g|png|webp|heic|heif|gif|bmp|tiff)$/i.test(file.name)
+  );
+};
+
 // ── Expense Status Badge ─────────────────────────────────
 function ExpenseStatusBadge({ status }: { status: Expense["status"] }) {
   if (status === "paid")
@@ -153,6 +160,10 @@ function NewDepositModal({
     }
     if (!file) {
       setError("Please attach a proof of payment document.");
+      return;
+    }
+    if (!isSupportedProofImage(file)) {
+      setError("Unsupported proof of payment file. Only image screenshots are supported, such as JPG, JPEG, PNG, HEIC, or other images.");
       return;
     }
     setSaving(true);
@@ -245,7 +256,7 @@ function NewDepositModal({
             <input
               ref={fileRef}
               type="file"
-              accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+              accept="image/*,.heic"
               className="hidden"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
@@ -268,8 +279,8 @@ function NewDepositModal({
                 className="w-full flex flex-col items-center gap-2 p-5 border-2 border-dashed border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition text-gray-400 hover:text-indigo-500"
               >
                 <Upload className="h-6 w-6" />
-                <span className="text-sm">Click to attach document</span>
-                <span className="text-xs">PDF, image, or Word — max 10 MB</span>
+                <span className="text-sm">Click to attach payment image</span>
+                <span className="text-xs">Images only — JPG, PNG, HEIC, WEBP supported; max 10 MB</span>
               </button>
             )}
           </div>
@@ -988,6 +999,10 @@ function ReviewExpenseModal({
   async function handleApprove() {
     setError("");
     if (!proofFile) { setError("Please attach the payment proof or receipt before approving."); return; }
+    if (!isSupportedProofImage(proofFile)) {
+      setError("Unsupported proof of payment file. Only image screenshots are supported, such as JPG, JPEG, PNG, HEIC, or other images.");
+      return;
+    }
     setSaving(true);
     try {
       const fd = new FormData();
@@ -1139,7 +1154,7 @@ function ReviewExpenseModal({
                 <input
                   ref={fileRef}
                   type="file"
-                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                  accept="image/*,.heic"
                   className="hidden"
                   onChange={(e) => setProofFile(e.target.files?.[0] ?? null)}
                 />
@@ -1165,7 +1180,7 @@ function ReviewExpenseModal({
                   >
                     <Upload className="h-6 w-6 group-hover:scale-110 transition-transform" />
                     <span className="text-sm font-medium">Click to attach receipt or proof</span>
-                    <span className="text-xs">PDF, image, or Word — max 10 MB</span>
+                    <span className="text-xs">Images only — JPG, PNG, HEIC, WEBP supported; max 10 MB</span>
                   </button>
                 )}
               </div>
