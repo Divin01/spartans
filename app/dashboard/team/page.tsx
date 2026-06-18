@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { getUsers, getTasks, getReviews, createUser, getCashier, setCashier, setCashierPasskey } from "@/lib/firestore";
-import type { User, Task, Review, CashierSetting } from "@/lib/types";
+import { getUsers, getTasks, getReviews, createUser, getCashier, setCashier, setCashierPasskey, getProjectConfig } from "@/lib/firestore";
+import type { User, Task, Review, CashierSetting, ProjectConfig } from "@/lib/types";
+import { DEFAULT_CONFIG } from "@/lib/project-config";
+import { buildOrderedMilestoneGroups } from "@/lib/milestones";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Loader2,
@@ -30,15 +32,18 @@ export default function TeamPage() {
   const [showAssignCashier, setShowAssignCashier] = useState(false);
   const [assigningCashier, setAssigningCashier] = useState(false);
   const [selectedCashierId, setSelectedCashierId] = useState("");
+  const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null);
 
   const isManager = user?.role === "manager";
+  const cfg = projectConfig ?? DEFAULT_CONFIG;
 
   async function load() {
-    const [u, t, r, c] = await Promise.all([getUsers(), getTasks(), getReviews(), getCashier()]);
+    const [u, t, r, c, pc] = await Promise.all([getUsers(), getTasks(), getReviews(), getCashier(), getProjectConfig()]);
     setUsers(u);
     setTasks(t);
     setReviews(r);
     setCashierState(c);
+    setProjectConfig(pc ?? DEFAULT_CONFIG);
     setLoading(false);
   }
 
@@ -278,16 +283,11 @@ export default function TeamPage() {
                     No tasks assigned yet
                   </p>
                 ) : (() => {
-                  const grouped = userTasks.reduce<Record<string, Task[]>>((acc, t) => {
-                    const key = t.milestone || "Uncategorized";
-                    if (!acc[key]) acc[key] = [];
-                    acc[key].push(t);
-                    return acc;
-                  }, {});
+                  const orderedGroups = buildOrderedMilestoneGroups(userTasks, cfg);
 
                   return (
                     <div className="space-y-3">
-                      {Object.entries(grouped).map(([milestone, mTasks]) => {
+                      {orderedGroups.map(({ key: milestone, tasks: mTasks, planTaskId }) => {
                         const mKey = `${selectedUser.id}-${milestone}`;
                         const isOpen = expandedMilestones.has(mKey);
                         const mileDone = mTasks.reduce(
@@ -318,6 +318,11 @@ export default function TeamPage() {
                               <div className="flex items-center gap-2.5">
                                 <div className="w-1 h-5 rounded-full bg-indigo-500" />
                                 <div className="text-left">
+                                  {planTaskId && (
+                                    <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                                      {planTaskId}
+                                    </span>
+                                  )}
                                   <p className="text-sm font-semibold text-gray-900">{milestone}</p>
                                   <p className="text-xs text-gray-400">{mileDone}/{mileTotal} subtasks &middot; {mTasks.length} task{mTasks.length !== 1 ? "s" : ""}</p>
                                 </div>

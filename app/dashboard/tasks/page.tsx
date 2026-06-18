@@ -24,6 +24,9 @@ import {
   normalizeMilestone,
   taskMilestoneKey,
   filterPlanMilestoneOptions,
+  groupTasksByMilestone,
+  buildOrderedMilestoneGroups,
+  sortMilestoneEntries,
   type PlanMilestoneOption,
 } from "@/lib/milestones";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
@@ -161,12 +164,7 @@ export default function TasksPage() {
 
   // Group tasks by canonical milestone (plan-linked when milestoneId or label matches)
   const cfg = projectConfig ?? DEFAULT_CONFIG;
-  const milestones = tasks.reduce<Record<string, Task[]>>((acc, t) => {
-    const key = taskMilestoneKey(t, cfg);
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(t);
-    return acc;
-  }, {});
+  const milestones = groupTasksByMilestone(tasks, cfg);
 
   const planMilestones = useMemo(
     () => getPlanMilestoneOptions(cfg, tasks),
@@ -233,7 +231,7 @@ export default function TasksPage() {
     );
   }
 
-  // Apply sort within each milestone
+  // Apply sort within each milestone, then order groups by project plan
   const filteredMilestones: Record<string, Task[]> = Object.fromEntries(
     Object.entries(filtered).map(([m, ts]) => {
       const sorted = [...ts].sort((a, b) => {
@@ -255,6 +253,23 @@ export default function TasksPage() {
       return [m, sorted];
     })
   );
+
+  const showFullPlanOrder =
+    filter === "all" && !search.trim() && statusFilter === "all";
+
+  const orderedMilestoneGroups = showFullPlanOrder
+    ? buildOrderedMilestoneGroups(tasks, cfg, { includeEmptyPlanMilestones: true }).map(
+        (g) => ({ ...g, tasks: filteredMilestones[g.key] ?? [] })
+      )
+    : sortMilestoneEntries(Object.entries(filteredMilestones), cfg).map(
+        ([key, groupTasks]) => ({
+          key,
+          tasks: groupTasks,
+          planIndex: -1,
+          planTaskId: undefined as string | undefined,
+          isPlanMilestone: false,
+        })
+      );
 
   function getTaskReviewStatus(task: Task) {
     const myReview = reviews.find(
@@ -619,7 +634,8 @@ export default function TasksPage() {
       </div>
 
       {/* Task cards */}
-      {Object.keys(filteredMilestones).length === 0 ? (
+      {orderedMilestoneGroups.length === 0 ||
+      (!showFullPlanOrder && orderedMilestoneGroups.every((g) => g.tasks.length === 0)) ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
             <ClipboardList className="h-8 w-8 text-gray-300" />
@@ -630,7 +646,8 @@ export default function TasksPage() {
           </p>
         </div>
       ) : (
-        Object.entries(filteredMilestones).map(([milestone, mTasks]) => {
+        orderedMilestoneGroups.map(({ key: milestone, tasks: mTasks, planTaskId, isPlanMilestone }) => {
+          if (!showFullPlanOrder && mTasks.length === 0) return null;
           const mileDone = filter === "mine"
             ? mTasks.reduce((a, t) => a + t.subtasks.filter((s) => s.assigneeId === user?.id && isEffectivelyDone(t.id, s)).length, 0)
             : mTasks.reduce((a, t) => a + t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length, 0);
@@ -641,13 +658,15 @@ export default function TasksPage() {
             mileTotal > 0 ? Math.round((mileDone / mileTotal) * 100) : 0;
 
           const isExpanded = expandedMilestones.has(milestone);
+          const isEmpty = mTasks.length === 0;
 
           return (
-            <div key={milestone} className="space-y-4">
+            <div key={milestone} className={`space-y-4 ${isEmpty ? "opacity-60" : ""}`}>
               {/* Milestone header */}
               <button
                 type="button"
                 onClick={() => {
+                  if (isEmpty) return;
                   setExpandedMilestones((prev) => {
                     const next = new Set(prev);
                     if (next.has(milestone)) next.delete(milestone);
@@ -655,41 +674,56 @@ export default function TasksPage() {
                     return next;
                   });
                 }}
-                className="w-full flex items-center justify-between hover:bg-gray-50 rounded-lg p-2 -m-2 transition"
+                className={`w-full flex items-center justify-between rounded-lg p-2 -m-2 transition ${
+                  isEmpty ? "cursor-default" : "hover:bg-gray-50"
+                }`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-1 h-8 rounded-full bg-indigo-500" />
+                  <div className={`w-1 h-8 rounded-full ${isEmpty ? "bg-gray-300" : "bg-indigo-500"}`} />
                   <div className="text-left">
+                    {planTaskId && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500">
+                        {planTaskId}
+                      </span>
+                    )}
                     <h3 className="text-base font-semibold text-gray-900">
                       {milestone}
                     </h3>
                     <p className="text-xs text-gray-400">
-                      {mileDone}/{mileTotal} subtasks completed &middot; {mTasks.length} task{mTasks.length !== 1 ? "s" : ""}
+                      {isEmpty
+                        ? isPlanMilestone
+                          ? "No tasks yet"
+                          : "No tasks"
+                        : `${mileDone}/${mileTotal} subtasks completed · ${mTasks.length} task${mTasks.length !== 1 ? "s" : ""}`}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span
-                    className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                      milePct === 100
-                        ? "bg-green-50 text-green-700"
-                        : milePct > 0
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-red-50 text-red-600"
-                    }`}
-                  >
-                    {milePct}%
-                  </span>
-                  <ChevronDown
-                    className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${
-                      isExpanded ? "rotate-180" : ""
-                    }`}
-                  />
+                  {!isEmpty && (
+                    <>
+                      <span
+                        className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                          milePct === 100
+                            ? "bg-green-50 text-green-700"
+                            : milePct > 0
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-red-50 text-red-600"
+                        }`}
+                      >
+                        {milePct}%
+                      </span>
+                      <ChevronDown
+                        className={`h-5 w-5 text-gray-400 transition-transform duration-200 ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </>
+                  )}
                 </div>
               </button>
 
               {/* All tasks behind dropdown */}
-              {isExpanded && (
+              {isExpanded && !isEmpty && (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
                   {mTasks.map((task) => {
                     const done = task.subtasks.filter((s) => isEffectivelyDone(task.id, s)).length;

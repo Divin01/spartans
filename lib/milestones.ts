@@ -128,3 +128,158 @@ export function filterPlanMilestoneOptions(
     (o) => o.id.toLowerCase().includes(q) || o.label.toLowerCase().includes(q)
   );
 }
+
+/** Numeric-aware comparison for plan ids such as "4.1" vs "4.10". */
+export function comparePlanTaskIds(a: string, b: string): number {
+  const parts = (id: string) => id.split(".").map((n) => parseInt(n, 10) || 0);
+  const pa = parts(a);
+  const pb = parts(b);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function planIndexForKey(milestoneKey: string, config: ProjectConfig): number {
+  if (!milestoneKey || milestoneKey === "Uncategorized") return -1;
+  const all = getAllPlanTasks(config);
+  return all.findIndex(
+    (pt) => formatPlanMilestone(pt) === milestoneKey || matchesPlanTaskId(milestoneKey, pt.id)
+  );
+}
+
+/** Sort milestone keys in project plan order; custom labels follow, then Uncategorized. */
+export function compareMilestoneKeys(
+  a: string,
+  b: string,
+  config: ProjectConfig = DEFAULT_CONFIG
+): number {
+  const all = getAllPlanTasks(config);
+  const rank = (key: string): number => {
+    if (!key || key === "Uncategorized") return all.length + 2;
+    const idx = planIndexForKey(key, config);
+    if (idx !== -1) return idx;
+    return all.length + 1;
+  };
+
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra - rb;
+  return a.localeCompare(b);
+}
+
+export function sortMilestoneKeys(
+  keys: string[],
+  config: ProjectConfig = DEFAULT_CONFIG
+): string[] {
+  return [...keys].sort((a, b) => compareMilestoneKeys(a, b, config));
+}
+
+export function sortMilestoneEntries<T>(
+  entries: [string, T][],
+  config: ProjectConfig = DEFAULT_CONFIG
+): [string, T][] {
+  return [...entries].sort(([a], [b]) => compareMilestoneKeys(a, b, config));
+}
+
+export function groupTasksByMilestone(
+  tasks: Pick<Task, "milestone" | "milestoneId">[],
+  config: ProjectConfig = DEFAULT_CONFIG
+): Record<string, Task[]> {
+  return tasks.reduce<Record<string, Task[]>>((acc, t) => {
+    const key = taskMilestoneKey(t, config);
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(t as Task);
+    return acc;
+  }, {});
+}
+
+export interface OrderedMilestoneGroup {
+  key: string;
+  tasks: Task[];
+  planIndex: number;
+  planTaskId?: string;
+  isPlanMilestone: boolean;
+}
+
+/** Build milestone groups sorted in plan order; optionally include empty plan slots. */
+export function buildOrderedMilestoneGroups(
+  tasks: Task[],
+  config: ProjectConfig = DEFAULT_CONFIG,
+  options?: { includeEmptyPlanMilestones?: boolean }
+): OrderedMilestoneGroup[] {
+  const grouped = groupTasksByMilestone(tasks, config);
+  const all = getAllPlanTasks(config);
+
+  if (options?.includeEmptyPlanMilestones) {
+    const result: OrderedMilestoneGroup[] = all.map((pt, planIndex) => {
+      const key = formatPlanMilestone(pt);
+      return {
+        key,
+        tasks: grouped[key] ?? [],
+        planIndex,
+        planTaskId: pt.id,
+        isPlanMilestone: true,
+      };
+    });
+
+    const planKeys = new Set(result.map((g) => g.key));
+    sortMilestoneEntries(
+      Object.entries(grouped).filter(
+        ([key]) => !planKeys.has(key) && key !== "Uncategorized"
+      ),
+      config
+    ).forEach(([key, groupTasks]) => {
+      result.push({
+        key,
+        tasks: groupTasks,
+        planIndex: all.length,
+        isPlanMilestone: false,
+      });
+    });
+
+    if (grouped["Uncategorized"]?.length) {
+      result.push({
+        key: "Uncategorized",
+        tasks: grouped["Uncategorized"],
+        planIndex: all.length + 1,
+        isPlanMilestone: false,
+      });
+    }
+
+    return result;
+  }
+
+  return sortMilestoneEntries(Object.entries(grouped), config).map(([key, groupTasks]) => {
+    const planIndex = planIndexForKey(key, config);
+    const pt = planIndex !== -1 ? all[planIndex] : undefined;
+    return {
+      key,
+      tasks: groupTasks,
+      planIndex,
+      planTaskId: pt?.id,
+      isPlanMilestone: planIndex !== -1,
+    };
+  });
+}
+
+/** True when two milestone strings refer to the same canonical milestone. */
+export function milestoneStringsMatch(
+  a: string,
+  b: string,
+  config: ProjectConfig = DEFAULT_CONFIG
+): boolean {
+  if (a === b) return true;
+  return taskMilestoneKey({ milestone: a }, config) === taskMilestoneKey({ milestone: b }, config);
+}
+
+/** Ordered milestone keys for charts/filters — all plan slots plus any custom groups with tasks. */
+export function getOrderedMilestoneKeys(
+  tasks: Task[],
+  config: ProjectConfig = DEFAULT_CONFIG,
+  options?: { includeEmptyPlanMilestones?: boolean }
+): string[] {
+  return buildOrderedMilestoneGroups(tasks, config, options).map((g) => g.key);
+}

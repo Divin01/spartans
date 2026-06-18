@@ -8,6 +8,7 @@ import {
   getAllPlanTasks,
   getTaskPlanTaskId,
   taskMatchesPlanTask,
+  buildOrderedMilestoneGroups,
 } from "@/lib/milestones";
 import { useAuth } from "@/lib/auth-context";
 import type { Task, Review, ProjectConfig, Phase, PhaseTask, KeyMilestone } from "@/lib/types";
@@ -573,19 +574,29 @@ export default function TimelinePage() {
   }, [tasks, reviews, config, burndownView]);
 
   // ── Milestone progress — only groups with live tasks ──────────────────────
-  // Tab 3 shows only milestones that have been assigned Firestore tasks.
+  // Tab 3 shows milestones in project plan order.
   const milestones = useMemo(() => {
-    const acc: Record<string, { tasks: Task[]; done: number; total: number }> = {};
-    tasks.forEach((t) => {
-      const key = t.milestone || "Uncategorized";
-      if (!acc[key]) acc[key] = { tasks: [], done: 0, total: 0 };
-      acc[key].tasks.push(t);
-      acc[key].total += t.subtasks.length;
-      acc[key].done += t.subtasks.filter((s) => isEffectivelyDone(t.id, s)).length;
-    });
-    return acc;
+    return buildOrderedMilestoneGroups(tasks, config).reduce<
+      Record<string, { tasks: Task[]; done: number; total: number; planTaskId?: string }>
+    >((acc, g) => {
+      acc[g.key] = {
+        tasks: g.tasks,
+        done: g.tasks.reduce(
+          (s, t) => s + t.subtasks.filter((sub) => isEffectivelyDone(t.id, sub)).length,
+          0
+        ),
+        total: g.tasks.reduce((s, t) => s + t.subtasks.length, 0),
+        planTaskId: g.planTaskId,
+      };
+      return acc;
+    }, {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, reviews]);
+  }, [tasks, reviews, config]);
+
+  const orderedMilestoneEntries = useMemo(
+    () => buildOrderedMilestoneGroups(tasks, config),
+    [tasks, config]
+  );
 
   // ── Per-phase-task live completion % ──────────────────────
   // Maps pt.id (e.g. "4.1") → 0-100. Used by Phase Plan tab status badges.
@@ -1111,13 +1122,15 @@ export default function TimelinePage() {
               <BarChart3 className="h-4 w-4 text-indigo-500" />Task Progress by Milestone
             </h3>
             <p className="text-xs text-gray-400 mb-5">Auto-updated from approved subtasks</p>
-            {Object.keys(milestones).length === 0 ? (
+            {orderedMilestoneEntries.length === 0 ? (
               <p className="text-gray-400 text-sm text-center py-8">No tasks assigned yet</p>
             ) : (
               <div className="relative">
                 <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-100" />
                 <div className="space-y-6">
-                  {Object.entries(milestones).map(([name, data], idx) => {
+                  {orderedMilestoneEntries.map(({ key: name, tasks: groupTasks, planTaskId }) => {
+                    const data = milestones[name];
+                    if (!data) return null;
                     const pct = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
                     const isComplete = pct === 100;
                     return (
@@ -1128,7 +1141,9 @@ export default function TimelinePage() {
                         <div className="bg-gray-50 rounded-xl border border-gray-100 p-4">
                           <div className="flex items-start justify-between mb-3">
                             <div>
-                              <span className="text-xs text-gray-400 uppercase tracking-wider">Milestone {idx + 1}</span>
+                              <span className="text-xs text-gray-400 uppercase tracking-wider">
+                                {planTaskId ? `Plan ${planTaskId}` : "Milestone"}
+                              </span>
                               <h4 className="text-sm font-bold mt-0.5 text-gray-800">{name}</h4>
                             </div>
                             <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${isComplete ? "bg-green-50 text-green-700" : pct > 50 ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>{pct}%</span>

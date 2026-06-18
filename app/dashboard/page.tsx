@@ -8,8 +8,16 @@ import {
   getReviews,
   getActivityLogs,
   getDeposits,
+  getProjectConfig,
 } from "@/lib/firestore";
-import type { Task, User, Review, ActivityLog, Deposit } from "@/lib/types";
+import type { Task, User, Review, ActivityLog, Deposit, ProjectConfig } from "@/lib/types";
+import { DEFAULT_CONFIG } from "@/lib/project-config";
+import {
+  buildOrderedMilestoneGroups,
+  getOrderedMilestoneKeys,
+  milestoneStringsMatch,
+  taskMilestoneKey,
+} from "@/lib/milestones";
 import {
   AreaChart,
   Area,
@@ -100,13 +108,15 @@ export default function DashboardPage() {
   const [activityFilterType, setActivityFilterType] = useState<"all" | "submitted" | "approved">("all");
   const [activityFilterMilestone, setActivityFilterMilestone] = useState("all");
   const [activitySort, setActivitySort] = useState<"newest" | "oldest">("newest");
+  const [projectConfig, setProjectConfig] = useState<ProjectConfig | null>(null);
 
   async function load() {
     setLoading(true);
-    const [t, u, r, a, d] = await Promise.all([
-      getTasks(), getUsers(), getReviews(), getActivityLogs(), getDeposits(),
+    const [t, u, r, a, d, cfg] = await Promise.all([
+      getTasks(), getUsers(), getReviews(), getActivityLogs(), getDeposits(), getProjectConfig(),
     ]);
     setTasks(t); setUsers(u); setReviews(r); setActivityLogs(a); setDeposits(d);
+    setProjectConfig(cfg ?? DEFAULT_CONFIG);
     setLastUpdated(new Date());
     setLoading(false);
   }
@@ -144,14 +154,23 @@ export default function DashboardPage() {
   const pendingReviews = reviews.filter((r) => r.status === "pending").length;
   const approvedReviews = reviews.filter((r) => r.status === "approved").length;
 
-  // ── Chart 1: Milestone progress ───────────────────────────────────────────
-  const milestones = [...new Set(tasks.map((t) => t.milestone))].filter(Boolean);
-  const milestoneData = milestones.map((m) => {
-    const mTasks = tasks.filter((t) => t.milestone === m);
-    const total = mTasks.reduce((a, t) => a + t.subtasks.length, 0);
-    const done = mTasks.reduce((a, t) => a + t.subtasks.filter((s) => isApproved(t.id, s)).length, 0);
+  const cfg = projectConfig ?? DEFAULT_CONFIG;
+
+  // ── Chart 1: Milestone progress (plan order, all plan slots) ──────────────
+  const milestoneFilterOptions = getOrderedMilestoneKeys(tasks, cfg, {
+    includeEmptyPlanMilestones: true,
+  });
+  const milestoneData = buildOrderedMilestoneGroups(tasks, cfg, {
+    includeEmptyPlanMilestones: true,
+  }).map((g) => {
+    const total = g.tasks.reduce((a, t) => a + t.subtasks.length, 0);
+    const done = g.tasks.reduce(
+      (a, t) => a + t.subtasks.filter((s) => isApproved(t.id, s)).length,
+      0
+    );
     return {
-      name: m.length > 22 ? m.slice(0, 20) + "…" : m,
+      name: g.key.length > 22 ? g.key.slice(0, 20) + "…" : g.key,
+      fullName: g.key,
       Total: total,
       Approved: done,
       pct: total > 0 ? Math.round((done / total) * 100) : 0,
@@ -162,7 +181,7 @@ export default function DashboardPage() {
   const now = new Date();
   const filteredActivity = filterMilestone === "all"
     ? activityLogs
-    : activityLogs.filter((l) => l.milestone === filterMilestone);
+    : activityLogs.filter((l) => milestoneStringsMatch(l.milestone, filterMilestone, cfg));
   const intervals = filterPeriod === "week" ? 7 : filterPeriod === "month" ? 4 : 8;
   const intervalDays = filterPeriod === "week" ? 1 : 7;
   const weeklyData = Array.from({ length: intervals }, (_, i) => {
@@ -231,7 +250,7 @@ export default function DashboardPage() {
 
   // ── Chart 7: Task completion: expected vs actual ─────────────────────────
   const taskCompletionData = tasks
-    .filter((t) => t.dueDate && (filterMilestone === "all" || t.milestone === filterMilestone))
+    .filter((t) => t.dueDate && (filterMilestone === "all" || taskMilestoneKey(t, cfg) === filterMilestone))
     .map((t) => {
       const created = new Date(t.createdAt).getTime();
       const due = new Date(t.dueDate!).getTime();
@@ -263,7 +282,7 @@ export default function DashboardPage() {
   const allActivityFiltered = activityLogs
     .filter((l) => {
       if (activityFilterType !== "all" && l.type !== activityFilterType) return false;
-      if (activityFilterMilestone !== "all" && l.milestone !== activityFilterMilestone) return false;
+      if (activityFilterMilestone !== "all" && !milestoneStringsMatch(l.milestone, activityFilterMilestone, cfg)) return false;
       if (activitySearch.trim()) {
         const q = activitySearch.toLowerCase();
         if (
@@ -352,7 +371,7 @@ export default function DashboardPage() {
               className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
             >
               <option value="all">All Milestones</option>
-              {milestones.map((m) => (
+              {milestoneFilterOptions.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
@@ -754,7 +773,7 @@ export default function DashboardPage() {
                   className="text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 text-gray-600 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 >
                   <option value="all">All Milestones</option>
-                  {milestones.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {milestoneFilterOptions.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
                 <button
                   onClick={() => setActivitySort(activitySort === "newest" ? "oldest" : "newest")}
