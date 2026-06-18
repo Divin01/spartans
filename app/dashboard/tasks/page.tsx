@@ -31,12 +31,6 @@ import {
 } from "@/lib/milestones";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
-  TaskSourceReferenceCard,
-  TaskSourceReferenceEditor,
-  buildSourceReferencePayload,
-} from "@/components/task-source-reference";
-import { hasTaskSourceReference } from "@/lib/task-source";
-import {
   Plus,
   Trash2,
   Pencil,
@@ -345,10 +339,6 @@ export default function TasksPage() {
                 {task.description}
               </p>
             </div>
-          )}
-
-          {hasTaskSourceReference(task) && (
-            <TaskSourceReferenceCard task={task} className="mb-3" />
           )}
 
           {/* Assignee names */}
@@ -952,15 +942,6 @@ export default function TasksPage() {
                   </div>
                 )}
 
-                {hasTaskSourceReference(t) && (
-                  <div>
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">
-                      Source reference
-                    </h4>
-                    <TaskSourceReferenceCard task={t} variant="detail" />
-                  </div>
-                )}
-
                 {/* Meta */}
                 <div className="flex flex-wrap gap-4 text-sm">
                   {t.dueDate && (
@@ -1161,13 +1142,6 @@ function TaskModal({
     task?.milestoneId ?? initialNormalized.milestoneId ?? ""
   );
   const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
-  const [sourceReferenceEnabled, setSourceReferenceEnabled] = useState(
-    task?.sourceReferenceEnabled ?? Boolean(task?.sourceLink || task?.sourceImageUrl)
-  );
-  const [sourceLink, setSourceLink] = useState(task?.sourceLink ?? "");
-  const [sourceImageUrl, setSourceImageUrl] = useState(task?.sourceImageUrl ?? "");
-  const [sourceImageName, setSourceImageName] = useState(task?.sourceImageName ?? "");
-  const [formError, setFormError] = useState("");
   const [showMilestonePicker, setShowMilestonePicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [subtasks, setSubtasks] = useState<
@@ -1235,24 +1209,6 @@ function TaskModal({
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !milestone.trim()) return;
-
-    const sourcePayload = buildSourceReferencePayload(
-      sourceReferenceEnabled,
-      sourceLink,
-      sourceImageUrl,
-      sourceImageName
-    );
-
-    if (
-      sourcePayload.sourceReferenceEnabled &&
-      !sourcePayload.sourceLink &&
-      !sourcePayload.sourceImageUrl
-    ) {
-      setFormError("Add a source link, image, or both when source reference is enabled.");
-      return;
-    }
-
-    setFormError("");
     setSaving(true);
 
     const builtSubtasks: Subtask[] = subtasks.map((s, i) => ({
@@ -1277,15 +1233,8 @@ function TaskModal({
         milestoneId: normalized.milestoneId ?? null,
         ...(dueDate ? { dueDate } : {}),
         subtasks: builtSubtasks,
-        ...sourcePayload,
       });
     } else {
-      const createSource = sourcePayload.sourceReferenceEnabled
-        ? Object.fromEntries(
-            Object.entries(sourcePayload).filter(([, value]) => value !== null)
-          )
-        : { sourceReferenceEnabled: false };
-
       await createTask({
         title: title.trim(),
         description: description.trim(),
@@ -1294,7 +1243,6 @@ function TaskModal({
         ...(dueDate ? { dueDate } : {}),
         createdBy: userId,
         subtasks: builtSubtasks,
-        ...createSource,
       });
     }
     onDone();
@@ -1421,24 +1369,6 @@ function TaskModal({
                   className="input"
                 />
               </Field>
-
-              <TaskSourceReferenceEditor
-                enabled={sourceReferenceEnabled}
-                onEnabledChange={setSourceReferenceEnabled}
-                sourceLink={sourceLink}
-                onSourceLinkChange={setSourceLink}
-                sourceImageUrl={sourceImageUrl}
-                sourceImageName={sourceImageName}
-                onImageChange={(url, name) => {
-                  setSourceImageUrl(url);
-                  setSourceImageName(name);
-                }}
-                disabled={saving}
-              />
-
-              {formError && (
-                <p className="text-sm text-red-600">{formError}</p>
-              )}
             </div>
 
             {/* Right: Assign to users */}

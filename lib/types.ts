@@ -26,11 +26,6 @@ export interface Task {
   createdAt: string;
   createdBy: string;
   dueDate?: string;
-  /** When true, task shows an optional product/source reference (link and/or image). */
-  sourceReferenceEnabled?: boolean;
-  sourceLink?: string;
-  sourceImageUrl?: string;
-  sourceImageName?: string;
 }
 
 export interface LoginLog {
@@ -119,6 +114,11 @@ export interface Expense {
   proofDocumentName?: string | null;
   proofDocumentPath?: string | null;
   paidAt?: string | null;
+  /** When true, expense includes a product/source reference for team transparency. */
+  hasSourceReference?: boolean;
+  sourceLink?: string | null;
+  sourceImageName?: string | null;
+  sourceImagePath?: string | null;
 }
 
 // ── Project / Timeline ───────────────────────────────────
