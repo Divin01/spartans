@@ -20,6 +20,8 @@ export interface Task {
   title: string;
   description: string;
   milestone: string;
+  /** Stable reference to a plan phase task id (e.g. "4.1") when linked to the timeline plan. */
+  milestoneId?: string;
   subtasks: Subtask[];
   createdAt: string;
   createdBy: string;

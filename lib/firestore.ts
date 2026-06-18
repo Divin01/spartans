@@ -10,6 +10,7 @@ import {
   orderBy,
   where,
   setDoc,
+  deleteField,
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import type { User, Task, Subtask, LoginLog, Review, ActivityLog, Deposit, CashierSetting, BankingDetails, ProjectConfig, Expense } from "./types";
@@ -67,9 +68,16 @@ export async function createTask(
 
 export async function updateTask(
   id: string,
-  data: Partial<Task>
+  data: Partial<Omit<Task, "milestoneId">> & { milestoneId?: string | null }
 ): Promise<void> {
-  await updateDoc(doc(db, "tasks", id), data as Record<string, unknown>);
+  const { milestoneId, ...rest } = data;
+  const payload: Record<string, unknown> = { ...rest };
+  if (milestoneId === null) {
+    payload.milestoneId = deleteField();
+  } else if (milestoneId !== undefined) {
+    payload.milestoneId = milestoneId;
+  }
+  await updateDoc(doc(db, "tasks", id), payload);
 }
 
 export async function deleteTask(id: string): Promise<void> {

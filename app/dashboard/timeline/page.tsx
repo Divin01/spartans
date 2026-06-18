@@ -3,6 +3,12 @@
 import { useEffect, useState, useMemo } from "react";
 import { getTasks, getReviews, getProjectConfig, saveProjectConfig, updateTask } from "@/lib/firestore";
 import { DEFAULT_CONFIG } from "@/lib/project-config";
+import {
+  formatPlanMilestone,
+  getAllPlanTasks,
+  getTaskPlanTaskId,
+  taskMatchesPlanTask,
+} from "@/lib/milestones";
 import { useAuth } from "@/lib/auth-context";
 import type { Task, Review, ProjectConfig, Phase, PhaseTask, KeyMilestone } from "@/lib/types";
 import {
@@ -393,6 +399,34 @@ export default function TimelinePage() {
       setTasks(freshTasks);
     }
 
+    // Propagate phase-task title changes to linked Firestore tasks (via milestoneId)
+    const oldPlanTasks = getAllPlanTasks(config);
+    const newPlanTasks = getAllPlanTasks(updated);
+    const planTitleUpdates = newPlanTasks
+      .map((np) => {
+        const op = oldPlanTasks.find((o) => o.id === np.id);
+        if (!op || op.title === np.title) return null;
+        return { id: np.id, label: formatPlanMilestone(np) };
+      })
+      .filter(Boolean) as { id: string; label: string }[];
+
+    if (planTitleUpdates.length > 0) {
+      const currentTasks = tasks.length ? tasks : await getTasks();
+      const affected = currentTasks.filter(
+        (t) => t.milestoneId && planTitleUpdates.some((u) => u.id === t.milestoneId)
+      );
+      if (affected.length > 0) {
+        await Promise.all(
+          affected.map((t) => {
+            const next = planTitleUpdates.find((u) => u.id === t.milestoneId)!;
+            return updateTask(t.id, { milestone: next.label });
+          })
+        );
+        const freshTasks = await getTasks();
+        setTasks(freshTasks);
+      }
+    }
+
     await saveProjectConfig(withUser);
     setConfig(withUser);
   }
@@ -428,29 +462,18 @@ export default function TimelinePage() {
     // N = total planned phase tasks (17). Planned line: 17 → 0 straight diagonal.
     // Actual line: normalized fraction done across all keyMilestone groups × N.
     // Weight = max(1, liveTaskCount) so milestones with no Firestore tasks still register.
-    const allPlanTasks = config.phases.flatMap((p) => p.tasks);
+    const allPlanTasks = getAllPlanTasks(config);
     const N = allPlanTasks.length;  // dynamic — updates if PM adds/removes tasks
     if (N === 0) return [];
     const totalProjectDays = daysBetween(projectStart, projectEnd);
 
     // Phase-task buckets — keyed by pt.id (e.g. "4.1").
-    // task.milestone may be "4.1" or "4.1 User Authentication..."; match by prefix.
     interface PtBucket { totalSubs: number; approvedByDate: Record<string, number> }
     const ptBuckets: Record<string, PtBucket> = {};
     allPlanTasks.forEach((pt) => { ptBuckets[pt.id] = { totalSubs: 0, approvedByDate: {} }; });
 
-    // Helper: match "4.1", "4.1 Title", "4.1. Title" but NOT "4.10"
-    function resolvePtId(m: string): string | undefined {
-      return allPlanTasks.find((pt) => {
-        if (m === pt.id) return true;
-        if (!m.startsWith(pt.id)) return false;
-        const sep = m[pt.id.length];
-        return sep === " " || sep === "." || sep === "-";
-      })?.id;
-    }
-
     tasks.forEach((task) => {
-      const ptId = resolvePtId(task.milestone || "");
+      const ptId = getTaskPlanTaskId(task, config);
       if (!ptId) return;
       task.subtasks.forEach((sub) => {
         ptBuckets[ptId].totalSubs += 1;
@@ -569,13 +592,7 @@ export default function TimelinePage() {
   const ptPctMap = useMemo(() => {
     const map: Record<string, number> = {};
     config.phases.flatMap((p) => p.tasks).forEach((pt) => {
-      const matching = tasks.filter((t) => {
-        const m = t.milestone ?? "";
-        if (m === pt.id) return true;
-        if (!m.startsWith(pt.id)) return false;
-        const sep = m[pt.id.length];
-        return sep === " " || sep === "." || sep === "-";
-      });
+      const matching = tasks.filter((t) => taskMatchesPlanTask(t, pt.id, config));
       if (matching.length === 0) { map[pt.id] = 0; return; }
       let total = 0, done = 0;
       matching.forEach((t) => {
@@ -622,18 +639,11 @@ export default function TimelinePage() {
   const scheduleProgress = timeElapsedPct;
 
   const overallPct = (() => {
-    const allPT = config.phases.flatMap((p) => p.tasks);
+    const allPT = getAllPlanTasks(config);
     if (allPT.length === 0) return 0;
     let remaining = 0;
     allPT.forEach((pt) => {
-      // Match by exact id, "id title" (space), "id. title" (period), guard "4.1" vs "4.10"
-      const matching = tasks.filter((t) => {
-        const m = t.milestone ?? "";
-        if (m === pt.id) return true;
-        if (!m.startsWith(pt.id)) return false;
-        const sep = m[pt.id.length];
-        return sep === " " || sep === "." || sep === "-";
-      });
+      const matching = tasks.filter((t) => taskMatchesPlanTask(t, pt.id, config));
       if (matching.length === 0) {
         remaining += 1;
       } else {

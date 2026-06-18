@@ -19,6 +19,13 @@ import {
 } from "@/lib/firestore";
 import type { Task, User, Subtask, Review, ProjectConfig } from "@/lib/types";
 import { DEFAULT_CONFIG } from "@/lib/project-config";
+import {
+  getPlanMilestoneOptions,
+  normalizeMilestone,
+  taskMilestoneKey,
+  filterPlanMilestoneOptions,
+  type PlanMilestoneOption,
+} from "@/lib/milestones";
 import { getUserColor, buildInitialsMap } from "@/lib/colors";
 import {
   Plus,
@@ -152,49 +159,19 @@ export default function TasksPage() {
     return !!approvedReview;
   }
 
-  // Group tasks by milestone
+  // Group tasks by canonical milestone (plan-linked when milestoneId or label matches)
+  const cfg = projectConfig ?? DEFAULT_CONFIG;
   const milestones = tasks.reduce<Record<string, Task[]>>((acc, t) => {
-    const key = t.milestone || "Uncategorized";
+    const key = taskMilestoneKey(t, cfg);
     if (!acc[key]) acc[key] = [];
     acc[key].push(t);
     return acc;
   }, {});
 
-  // Progressive milestone suggestions:
-  // 1. Actual milestone strings from existing Firestore tasks, sorted in plan order.
-  //    Matching handles "4.1", "4.1 Title", "4.1. Title" and guards "4.1" vs "4.10".
-  // 2. Append the next plan task ID that has no existing task yet.
-  const milestoneSuggestions = useMemo(() => {
-    const cfg = projectConfig ?? DEFAULT_CONFIG;
-    const allPT = cfg.phases.flatMap((p) => p.tasks);
-
-    // Returns true if a stored milestone string belongs to a given plan task id
-    function matchesPt(m: string, ptId: string): boolean {
-      if (m === ptId) return true;
-      if (!m.startsWith(ptId)) return false;
-      const sep = m[ptId.length];
-      return sep === " " || sep === "." || sep === "-";
-    }
-
-    // Unique milestone strings actually stored in Firestore
-    const usedStrings = [...new Set(tasks.map((t) => t.milestone).filter(Boolean))];
-
-    // Sort them in plan order
-    const inPlanOrder: string[] = [];
-    const remaining = [...usedStrings];
-    allPT.forEach((pt) => {
-      const idx = remaining.findIndex((m) => matchesPt(m, pt.id));
-      if (idx !== -1) {
-        inPlanOrder.push(remaining[idx]);
-        remaining.splice(idx, 1);
-      }
-    });
-
-    // Next plan task not yet covered by any existing milestone string
-    const next = allPT.find((pt) => !usedStrings.some((m) => matchesPt(m, pt.id)));
-
-    return [...inPlanOrder, ...remaining, ...(next ? [`${next.id}. ${next.title}`] : [])];
-  }, [tasks, projectConfig]);
+  const planMilestones = useMemo(
+    () => getPlanMilestoneOptions(cfg, tasks),
+    [tasks, cfg]
+  );
 
   // Apply ownership filter
   let filtered: Record<string, Task[]> =
@@ -739,7 +716,8 @@ export default function TasksPage() {
           mode="create"
           users={users}
           userId={user!.id}
-          existingMilestones={milestoneSuggestions}
+          projectConfig={cfg}
+          planMilestones={planMilestones}
           onClose={() => setShowCreate(false)}
           onDone={async () => {
             setShowCreate(false);
@@ -755,7 +733,8 @@ export default function TasksPage() {
           task={editingTask}
           users={users}
           userId={user!.id}
-          existingMilestones={milestoneSuggestions}
+          projectConfig={cfg}
+          planMilestones={planMilestones}
           onClose={() => setEditingTask(null)}
           onDone={async () => {
             setEditingTask(null);
@@ -885,7 +864,7 @@ export default function TasksPage() {
                   <h2 className="text-lg font-semibold text-gray-900 truncate">
                     {t.title}
                   </h2>
-                  <p className="text-xs text-gray-400 mt-0.5">{t.milestone}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">{taskMilestoneKey(t, cfg)}</p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-3">
                   {modalReviewStatus === "pending" && (
@@ -1102,7 +1081,8 @@ function TaskModal({
   task,
   users,
   userId,
-  existingMilestones,
+  projectConfig,
+  planMilestones,
   onClose,
   onDone,
 }: {
@@ -1110,14 +1090,26 @@ function TaskModal({
   task?: Task;
   users: User[];
   userId: string;
-  existingMilestones: string[];
+  projectConfig: ProjectConfig;
+  planMilestones: PlanMilestoneOption[];
   onClose: () => void;
   onDone: () => void;
 }) {
+  const initialNormalized = task
+    ? normalizeMilestone(task.milestone, projectConfig)
+    : { milestone: "", milestoneId: undefined as string | undefined };
+
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
-  const [milestone, setMilestone] = useState(task?.milestone ?? "");
+  const [milestone, setMilestone] = useState(
+    initialNormalized.milestone || task?.milestone || ""
+  );
+  const [milestoneId, setMilestoneId] = useState(
+    task?.milestoneId ?? initialNormalized.milestoneId ?? ""
+  );
   const [dueDate, setDueDate] = useState(task?.dueDate ?? "");
+  const [showMilestonePicker, setShowMilestonePicker] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [subtasks, setSubtasks] = useState<
     {
       id?: string;
@@ -1137,7 +1129,22 @@ function TaskModal({
       completedAt: s.completedAt,
     })) ?? []
   );
-  const [saving, setSaving] = useState(false);
+  const filteredMilestones = filterPlanMilestoneOptions(planMilestones, milestone);
+  const linkedOption = milestoneId
+    ? planMilestones.find((o) => o.id === milestoneId)
+    : undefined;
+
+  function applyMilestoneInput(value: string) {
+    setMilestone(value);
+    const normalized = normalizeMilestone(value, projectConfig);
+    setMilestoneId(normalized.milestoneId ?? "");
+  }
+
+  function selectPlanMilestone(option: PlanMilestoneOption) {
+    setMilestone(option.label);
+    setMilestoneId(option.id);
+    setShowMilestonePicker(false);
+  }
 
   // All registered users (managers + members)
   const members = users;
@@ -1182,11 +1189,14 @@ function TaskModal({
       ...(s.completedAt ? { completedAt: s.completedAt } : {}),
     }));
 
+    const normalized = normalizeMilestone(milestone, projectConfig);
+
     if (mode === "edit" && task) {
       await updateTask(task.id, {
         title: title.trim(),
         description: description.trim(),
-        milestone: milestone.trim(),
+        milestone: normalized.milestone,
+        milestoneId: normalized.milestoneId ?? null,
         ...(dueDate ? { dueDate } : {}),
         subtasks: builtSubtasks,
       });
@@ -1194,7 +1204,8 @@ function TaskModal({
       await createTask({
         title: title.trim(),
         description: description.trim(),
-        milestone: milestone.trim(),
+        milestone: normalized.milestone,
+        ...(normalized.milestoneId ? { milestoneId: normalized.milestoneId } : {}),
         ...(dueDate ? { dueDate } : {}),
         createdBy: userId,
         subtasks: builtSubtasks,
@@ -1232,35 +1243,70 @@ function TaskModal({
             <div className="px-6 py-5 space-y-4">
               <Field label="Milestone" required>
                 <div className="space-y-2">
-                  {existingMilestones.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {existingMilestones.map((m) => (
+                  {planMilestones.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                      {planMilestones.map((m) => (
                         <button
-                          key={m}
+                          key={m.id}
                           type="button"
-                          onClick={() => setMilestone(m)}
+                          onClick={() => selectPlanMilestone(m)}
                           className={`text-xs px-2.5 py-1 rounded-full border transition ${
-                            milestone === m
+                            milestoneId === m.id
                               ? "bg-indigo-50 border-indigo-300 text-indigo-700 font-medium"
-                              : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"
+                              : m.used
+                                ? "bg-emerald-50 border-emerald-200 text-emerald-700 hover:border-emerald-300"
+                                : "bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300"
                           }`}
+                          title={m.used ? "Already has tasks" : "Plan milestone"}
                         >
-                          {m}
+                          {m.id}
                         </button>
                       ))}
                     </div>
                   )}
-                  <input
-                    value={milestone}
-                    onChange={(e) => setMilestone(e.target.value)}
-                    placeholder={
-                      existingMilestones.length > 0
-                        ? "Or type a new milestone"
-                        : "e.g. 4.1 User Authentication"
-                    }
-                    className="input"
-                    required
-                  />
+                  <div className="relative">
+                    <input
+                      value={milestone}
+                      onChange={(e) => {
+                        applyMilestoneInput(e.target.value);
+                        setShowMilestonePicker(true);
+                      }}
+                      onFocus={() => setShowMilestonePicker(true)}
+                      onBlur={() => {
+                        window.setTimeout(() => setShowMilestonePicker(false), 150);
+                      }}
+                      placeholder="Type id or title, e.g. 4.1"
+                      className="input"
+                      required
+                      autoComplete="off"
+                    />
+                    {showMilestonePicker && filteredMilestones.length > 0 && (
+                      <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg py-1">
+                        {filteredMilestones.map((m) => (
+                          <li key={m.id}>
+                            <button
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selectPlanMilestone(m)}
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-indigo-50 flex items-center justify-between gap-2"
+                            >
+                              <span className="truncate">{m.label}</span>
+                              {m.used && (
+                                <span className="text-[10px] uppercase tracking-wide text-emerald-600 shrink-0">
+                                  in use
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {linkedOption && (
+                    <p className="text-xs text-indigo-600">
+                      Linked to plan milestone {linkedOption.id}
+                    </p>
+                  )}
                 </div>
               </Field>
               <Field label="Title" required>
