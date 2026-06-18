@@ -68,15 +68,31 @@ export async function createTask(
 
 export async function updateTask(
   id: string,
-  data: Partial<Omit<Task, "milestoneId">> & { milestoneId?: string | null }
-): Promise<void> {
-  const { milestoneId, ...rest } = data;
-  const payload: Record<string, unknown> = { ...rest };
-  if (milestoneId === null) {
-    payload.milestoneId = deleteField();
-  } else if (milestoneId !== undefined) {
-    payload.milestoneId = milestoneId;
+  data: Partial<Omit<Task, "milestoneId" | "sourceLink" | "sourceImageUrl" | "sourceImageName">> & {
+    milestoneId?: string | null;
+    sourceLink?: string | null;
+    sourceImageUrl?: string | null;
+    sourceImageName?: string | null;
   }
+): Promise<void> {
+  const { milestoneId, sourceLink, sourceImageUrl, sourceImageName, ...rest } = data;
+  const payload: Record<string, unknown> = { ...rest };
+
+  const nullableFields: [string, string | null | undefined][] = [
+    ["milestoneId", milestoneId],
+    ["sourceLink", sourceLink],
+    ["sourceImageUrl", sourceImageUrl],
+    ["sourceImageName", sourceImageName],
+  ];
+
+  for (const [field, value] of nullableFields) {
+    if (value === null) {
+      payload[field] = deleteField();
+    } else if (value !== undefined) {
+      payload[field] = value;
+    }
+  }
+
   await updateDoc(doc(db, "tasks", id), payload);
 }
 

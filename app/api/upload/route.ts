@@ -21,15 +21,24 @@ export async function POST(req: NextRequest) {
     "image/jpeg",
     "image/png",
     "image/webp",
+    "image/gif",
+    "image/heic",
+    "image/heif",
     "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ];
-  if (!allowed.includes(file.type)) {
+  if (!allowed.includes(file.type) && !file.type.startsWith("image/")) {
     return NextResponse.json(
       { error: "File type not allowed. Use PDF, image, or Word document." },
       { status: 400 }
     );
   }
+
+  const folderField = formData.get("folder");
+  const folder =
+    typeof folderField === "string" && /^[\w/-]+$/.test(folderField)
+      ? folderField
+      : "spartans/deposits";
 
   // 10 MB limit
   if (file.size > 10 * 1024 * 1024) {
@@ -47,7 +56,7 @@ export async function POST(req: NextRequest) {
       (resolve, reject) => {
         const stream = cloudinary.uploader.upload_stream(
           {
-            folder: "spartans/deposits",
+            folder,
             resource_type: "auto",
             use_filename: true,
             unique_filename: true,

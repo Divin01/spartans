@@ -26,6 +26,11 @@ export interface Task {
   createdAt: string;
   createdBy: string;
   dueDate?: string;
+  /** When true, task shows an optional product/source reference (link and/or image). */
+  sourceReferenceEnabled?: boolean;
+  sourceLink?: string;
+  sourceImageUrl?: string;
+  sourceImageName?: string;
 }
 
 export interface LoginLog {
