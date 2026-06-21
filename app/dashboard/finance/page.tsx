@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth-context";
 import {
   getDeposits,
@@ -134,6 +134,36 @@ async function uploadProofImage(file: File): Promise<{ path: string; name: strin
     throw new Error(json.error ?? "Upload failed");
   }
   return res.json();
+}
+
+function imageFileFromClipboard(
+  data: DataTransfer | null | undefined
+): File | null {
+  if (!data) return null;
+
+  const items = data.items ? Array.from(data.items) : [];
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      const file = item.getAsFile();
+      if (file) return file;
+    }
+  }
+
+  const files = data.files ? Array.from(data.files) : [];
+  return files.find((f) => f.type.startsWith("image/") || isSupportedProofImage(f)) ?? null;
+}
+
+function applyPastedSourceImage(
+  file: File,
+  onApply: (file: File) => void,
+  onError: (message: string) => void
+): boolean {
+  if (!isSupportedProofImage(file)) {
+    onError("Unsupported pasted image. Use JPG, PNG, WEBP, or other common image formats.");
+    return false;
+  }
+  onApply(file);
+  return true;
 }
 
 function ExpenseSourceReference({
@@ -1001,11 +1031,49 @@ function NewExpenseModal({
   const [error, setError] = useState("");
   const sourceImageRef = useRef<HTMLInputElement>(null);
 
-  function handleSourceImageChange(file: File | null) {
-    if (sourceImagePreview) URL.revokeObjectURL(sourceImagePreview);
+  const handleSourceImageChange = useCallback((file: File | null) => {
+    setSourceImagePreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
     setSourceImage(file);
-    setSourceImagePreview(file ? URL.createObjectURL(file) : null);
-  }
+  }, []);
+
+  const handleSourceImagePaste = useCallback(
+    (e: React.ClipboardEvent | ClipboardEvent) => {
+      const file = imageFileFromClipboard(e.clipboardData);
+      if (!file) return false;
+      e.preventDefault();
+      if (applyPastedSourceImage(file, handleSourceImageChange, setError)) {
+        setError("");
+      }
+      return true;
+    },
+    [handleSourceImageChange]
+  );
+
+  useEffect(() => {
+    if (!hasSourceReference) return;
+
+    function onWindowPaste(e: ClipboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "TEXTAREA" ||
+          (target.tagName === "INPUT" &&
+            (target as HTMLInputElement).type !== "file" &&
+            !(target as HTMLInputElement).type.startsWith("hidden")))
+      ) {
+        const text = e.clipboardData?.getData("text/plain")?.trim();
+        if (text && !imageFileFromClipboard(e.clipboardData)) return;
+      }
+
+      handleSourceImagePaste(e);
+    }
+
+    window.addEventListener("paste", onWindowPaste);
+    return () => window.removeEventListener("paste", onWindowPaste);
+  }, [hasSourceReference, handleSourceImagePaste]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -1166,7 +1234,10 @@ function NewExpenseModal({
           />
 
           {hasSourceReference && (
-            <div className="space-y-4 p-4 rounded-2xl border border-dashed border-orange-200 bg-orange-50/30">
+            <div
+              onPaste={handleSourceImagePaste}
+              className="space-y-4 p-4 rounded-2xl border border-dashed border-orange-200 bg-orange-50/30 outline-none focus-within:ring-2 focus-within:ring-orange-300/60 focus-within:border-orange-300"
+            >
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Website link <span className="text-gray-400 font-normal">(optional)</span>
@@ -1226,13 +1297,22 @@ function NewExpenseModal({
                       <ImageIcon className="h-6 w-6 text-orange-500" />
                     </div>
                     <span className="text-sm font-medium">Upload product or item photo</span>
-                    <span className="text-xs text-center px-4">Visible to all members · JPG, PNG, WEBP · max 10 MB</span>
+                    <span className="text-xs text-center px-4">
+                      Click to browse, or press{" "}
+                      <kbd className="px-1.5 py-0.5 rounded-md bg-orange-100 text-orange-700 font-mono text-[10px]">
+                        Ctrl+V
+                      </kbd>{" "}
+                      to paste a screenshot
+                    </span>
+                    <span className="text-xs text-center px-4 text-gray-400">
+                      Visible to all members · JPG, PNG, WEBP · max 10 MB
+                    </span>
                   </button>
                 )}
               </div>
 
               <p className="text-xs text-orange-700/80 bg-orange-50 rounded-xl px-3 py-2 border border-orange-100">
-                Provide at least a link or an image. Team members will see this on the expense card and can tap to open the reference.
+                Provide at least a link or an image. Paste a screenshot with Ctrl+V anywhere in this section, or from elsewhere in the form.
               </p>
             </div>
           )}
