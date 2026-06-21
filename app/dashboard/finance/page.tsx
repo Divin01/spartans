@@ -1007,37 +1007,56 @@ function DepositCard({
   );
 }
 
-// ── New Expense Modal ────────────────────────────────────
-function NewExpenseModal({
+// ── Create / Edit Expense Modal ──────────────────────────
+function ExpenseModal({
+  mode,
+  expense,
   onClose,
   onDone,
   userName,
   userId,
 }: {
+  mode: "create" | "edit";
+  expense?: Expense;
   onClose: () => void;
   onDone: () => void;
   userName: string;
   userId: string;
 }) {
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [hasSourceReference, setHasSourceReference] = useState(false);
-  const [sourceLink, setSourceLink] = useState("");
+  const [title, setTitle] = useState(expense?.title ?? "");
+  const [category, setCategory] = useState<string>(expense?.category ?? EXPENSE_CATEGORIES[0]);
+  const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  const [description, setDescription] = useState(expense?.description ?? "");
+  const [hasSourceReference, setHasSourceReference] = useState(!!expense?.hasSourceReference);
+  const [sourceLink, setSourceLink] = useState(expense?.sourceLink ?? "");
   const [sourceImage, setSourceImage] = useState<File | null>(null);
   const [sourceImagePreview, setSourceImagePreview] = useState<string | null>(null);
+  const [keptSourceImage, setKeptSourceImage] = useState<{ path: string; name: string } | null>(
+    mode === "edit" && expense?.sourceImagePath
+      ? { path: expense.sourceImagePath, name: expense.sourceImageName || "Source image" }
+      : null
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const sourceImageRef = useRef<HTMLInputElement>(null);
 
+  const previewUrl = sourceImagePreview ?? keptSourceImage?.path ?? null;
+  const previewName = sourceImage?.name ?? keptSourceImage?.name ?? "Source image";
+
   const handleSourceImageChange = useCallback((file: File | null) => {
     setSourceImagePreview((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
       return file ? URL.createObjectURL(file) : null;
     });
     setSourceImage(file);
+    if (file) setKeptSourceImage(null);
   }, []);
+
+  function clearSourceImage() {
+    handleSourceImageChange(null);
+    setKeptSourceImage(null);
+    if (sourceImageRef.current) sourceImageRef.current.value = "";
+  }
 
   const handleSourceImagePaste = useCallback(
     (e: React.ClipboardEvent | ClipboardEvent) => {
@@ -1075,6 +1094,10 @@ function NewExpenseModal({
     return () => window.removeEventListener("paste", onWindowPaste);
   }, [hasSourceReference, handleSourceImagePaste]);
 
+  if (mode === "edit" && (!expense || expense.status !== "planned")) {
+    return null;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -1084,7 +1107,8 @@ function NewExpenseModal({
 
     if (hasSourceReference) {
       const link = sourceLink.trim();
-      if (!link && !sourceImage) {
+      const hasImage = !!sourceImage || !!keptSourceImage;
+      if (!link && !hasImage) {
         setError("Add a product image and/or website link for the source reference.");
         return;
       }
@@ -1104,36 +1128,62 @@ function NewExpenseModal({
 
     setSaving(true);
     try {
+      if (mode === "edit" && expense) {
+        if (expense.status !== "planned" || expense.submittedBy !== userId) {
+          setError("Only pending expenses you submitted can be edited.");
+          setSaving(false);
+          return;
+        }
+      }
+
       let sourceImageName: string | null = null;
       let sourceImagePath: string | null = null;
 
-      if (hasSourceReference && sourceImage) {
-        const uploaded = await uploadProofImage(sourceImage);
-        sourceImageName = uploaded.name;
-        sourceImagePath = uploaded.path;
+      if (hasSourceReference) {
+        if (sourceImage) {
+          const uploaded = await uploadProofImage(sourceImage);
+          sourceImageName = uploaded.name;
+          sourceImagePath = uploaded.path;
+        } else if (keptSourceImage) {
+          sourceImageName = keptSourceImage.name;
+          sourceImagePath = keptSourceImage.path;
+        }
       }
 
-      await createExpense({
-        title: title.trim(),
-        category,
-        amount: parsed,
-        description: description.trim() || null,
-        submittedBy: userId,
-        submittedByName: userName,
-        submittedAt: new Date().toISOString(),
-        status: "planned",
-        reviewedBy: null,
-        reviewedByName: null,
-        reviewedAt: null,
-        declineReason: null,
-        proofDocumentName: null,
-        proofDocumentPath: null,
-        paidAt: null,
-        hasSourceReference,
-        sourceLink: hasSourceReference && sourceLink.trim() ? normalizeSourceUrl(sourceLink) : null,
-        sourceImageName,
-        sourceImagePath,
-      });
+      if (mode === "edit" && expense) {
+        await updateExpense(expense.id, {
+          title: title.trim(),
+          category,
+          amount: parsed,
+          description: description.trim() || null,
+          hasSourceReference,
+          sourceLink: hasSourceReference && sourceLink.trim() ? normalizeSourceUrl(sourceLink) : null,
+          sourceImageName: hasSourceReference ? sourceImageName : null,
+          sourceImagePath: hasSourceReference ? sourceImagePath : null,
+        });
+      } else {
+        await createExpense({
+          title: title.trim(),
+          category,
+          amount: parsed,
+          description: description.trim() || null,
+          submittedBy: userId,
+          submittedByName: userName,
+          submittedAt: new Date().toISOString(),
+          status: "planned",
+          reviewedBy: null,
+          reviewedByName: null,
+          reviewedAt: null,
+          declineReason: null,
+          proofDocumentName: null,
+          proofDocumentPath: null,
+          paidAt: null,
+          hasSourceReference,
+          sourceLink: hasSourceReference && sourceLink.trim() ? normalizeSourceUrl(sourceLink) : null,
+          sourceImageName,
+          sourceImagePath,
+        });
+      }
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
@@ -1151,8 +1201,14 @@ function NewExpenseModal({
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">Plan New Expense</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Submit an expense request for approval</p>
+            <h2 className="text-base font-semibold text-gray-900">
+              {mode === "edit" ? "Edit Expense" : "Plan New Expense"}
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {mode === "edit"
+                ? "Update your pending expense request"
+                : "Submit an expense request for approval"}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-600 transition">
             <X className="h-5 w-5" />
@@ -1168,7 +1224,7 @@ function NewExpenseModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Domain registration fee"
-              autoFocus
+              autoFocus={mode === "create"}
               required
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
@@ -1227,8 +1283,7 @@ function NewExpenseModal({
               setHasSourceReference(v);
               if (!v) {
                 setSourceLink("");
-                handleSourceImageChange(null);
-                if (sourceImageRef.current) sourceImageRef.current.value = "";
+                clearSourceImage();
               }
             }}
           />
@@ -1265,23 +1320,20 @@ function NewExpenseModal({
                   className="hidden"
                   onChange={(e) => handleSourceImageChange(e.target.files?.[0] ?? null)}
                 />
-                {sourceImage && sourceImagePreview ? (
+                {previewUrl ? (
                   <div className="relative rounded-2xl overflow-hidden border border-orange-200 bg-white">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={sourceImagePreview}
+                      src={previewUrl}
                       alt="Source preview"
                       className="w-full aspect-[16/10] object-cover"
                     />
                     <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/60 to-transparent">
-                      <p className="text-xs text-white truncate">{sourceImage.name}</p>
+                      <p className="text-xs text-white truncate">{previewName}</p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        handleSourceImageChange(null);
-                        if (sourceImageRef.current) sourceImageRef.current.value = "";
-                      }}
+                      onClick={clearSourceImage}
                       className="absolute top-2 right-2 p-1.5 rounded-full bg-black/40 text-white hover:bg-black/60 transition"
                     >
                       <X className="h-4 w-4" />
@@ -1336,8 +1388,8 @@ function NewExpenseModal({
             className="px-5 py-2.5 rounded-xl text-sm font-medium bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 transition flex items-center gap-2 shadow-sm"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            <ShoppingBag className="h-4 w-4" />
-            Submit Expense
+            {mode === "edit" ? <Pencil className="h-4 w-4" /> : <ShoppingBag className="h-4 w-4" />}
+            {mode === "edit" ? "Save Changes" : "Submit Expense"}
           </button>
         </div>
       </form>
@@ -1636,14 +1688,18 @@ function ReviewExpenseModal({
 function ExpenseCard({
   expense,
   canReview,
+  canEdit,
   canDelete,
   onReview,
+  onEdit,
   onDelete,
 }: {
   expense: Expense;
   canReview: boolean;
+  canEdit: boolean;
   canDelete: boolean;
   onReview: (e: Expense) => void;
+  onEdit: (e: Expense) => void;
   onDelete: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1699,8 +1755,18 @@ function ExpenseCard({
         {/* Title + amount */}
         <div className="flex items-start justify-between gap-3">
           <p className="text-sm font-semibold text-gray-900 leading-snug flex-1">{expense.title}</p>
-          <div className="shrink-0 flex items-center gap-2">
+          <div className="shrink-0 flex items-center gap-1">
             <p className="text-lg font-bold text-gray-900">{fmt(expense.amount)}</p>
+            {canEdit && expense.status === "planned" && !confirmDelete && (
+              <button
+                type="button"
+                onClick={() => onEdit(expense)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-orange-600 hover:bg-orange-50 transition"
+                title="Edit expense"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
             {canDelete && expense.status === "planned" && !confirmDelete && (
               <button
                 onClick={() => setConfirmDelete(true)}
@@ -1833,6 +1899,7 @@ export default function FinancePage() {
   const [showChangePasskey, setShowChangePasskey] = useState(false);
   const [reviewDeposit, setReviewDeposit] = useState<Deposit | null>(null);
   const [reviewExpense, setReviewExpense] = useState<Expense | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [filterUser, setFilterUser] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [expenseFilterCat, setExpenseFilterCat] = useState<string>("all");
@@ -2364,8 +2431,10 @@ export default function FinancePage() {
                     key={e.id}
                     expense={e}
                     canReview={canReviewExpense(e)}
+                    canEdit={e.submittedBy === user?.id && e.status === "planned"}
                     canDelete={e.submittedBy === user?.id}
                     onReview={setReviewExpense}
+                    onEdit={setEditingExpense}
                     onDelete={(id) => setExpenses((prev) => prev.filter((x) => x.id !== id))}
                   />
                 ))}
@@ -2461,9 +2530,21 @@ export default function FinancePage() {
       )}
 
       {showNewExpense && user && (
-        <NewExpenseModal
+        <ExpenseModal
+          mode="create"
           onClose={() => setShowNewExpense(false)}
           onDone={async () => { setShowNewExpense(false); await load(); }}
+          userName={user.name}
+          userId={user.id}
+        />
+      )}
+
+      {editingExpense && user && editingExpense.status === "planned" && (
+        <ExpenseModal
+          mode="edit"
+          expense={editingExpense}
+          onClose={() => setEditingExpense(null)}
+          onDone={async () => { setEditingExpense(null); await load(); }}
           userName={user.name}
           userId={user.id}
         />
